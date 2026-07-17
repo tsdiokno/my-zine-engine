@@ -199,7 +199,7 @@
     /* The Zine Canvas mimicking standard phone view */
     #canvas-container {
       position: relative;
-      padding: 30px 40px;
+      padding: 0 40px;
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -223,23 +223,24 @@
       border-right-color: rgba(59, 130, 246, 0.5);
     }
     
-    /* Ruler / boundary overlay indicators */
+    /* Ruler / boundary overlay indicators - placed over canvas with no margin impact */
     #canvas::before {
       content: 'MOBILE WORKSPACE BOUNDS (375PX)';
       position: absolute;
-      top: -24px;
+      top: 12px;
       left: 50%;
       transform: translateX(-50%);
       font-family: "JetBrains Mono", monospace;
       font-size: 9px;
-      color: rgba(255, 255, 255, 0.35);
+      color: rgba(255, 255, 255, 0.25);
       letter-spacing: 1.5px;
       white-space: nowrap;
       pointer-events: none;
+      z-index: 100;
       transition: color 0.2s ease;
     }
     #canvas:hover::before {
-      color: #3b82f6;
+      color: rgba(59, 130, 246, 0.6);
     }
 
     /* Interior elements in the editor */
@@ -299,16 +300,18 @@
       font-style: italic;
     }
 
-    /* Coordinate Indicators overlay */
+    /* Coordinate Indicators overlay - placed over canvas with no margin impact */
     .coords-indicator {
       position: absolute;
-      bottom: -24px;
+      bottom: 12px;
       left: 50%;
       transform: translateX(-50%);
       font-family: "JetBrains Mono", monospace;
       font-size: 10px;
-      color: #71717a;
+      color: rgba(255, 255, 255, 0.25);
       white-space: nowrap;
+      pointer-events: none;
+      z-index: 100;
     }
 
     /* Slider Container */
@@ -965,6 +968,61 @@
           </div>
         </div>
 
+        <!-- Hyperlink & Anchor ID Controls -->
+        <div class="form-group" style="border-top: 1px solid #27272a; padding-top: 12px; margin-top: 12px;">
+          <label class="form-label" style="font-weight: 600; color: #f4f4f5;">HYPERLINK & ANCHOR ID</label>
+          
+          <div style="margin-bottom: 8px;">
+            <label class="form-label" for="propCustomId" style="font-size: 10px; color: #a1a1aa;">ELEMENT ANCHOR ID</label>
+            <input type="text" id="propCustomId" placeholder="e.g. contact-section" style="font-family: monospace;">
+          </div>
+
+          <div style="margin-bottom: 8px;">
+            <label class="form-label" for="propHyperlinkType" style="font-size: 10px; color: #a1a1aa;">LINK TYPE</label>
+            <select id="propHyperlinkType" style="margin-bottom: 8px;">
+              <option value="none">No Link</option>
+              <option value="page">Page within Publication</option>
+              <option value="anchor">Anchor on Page</option>
+              <option value="external">External Website or File</option>
+            </select>
+          </div>
+
+          <!-- Page Selection Group -->
+          <div id="propLinkPageGroup" style="display: none; margin-bottom: 8px;">
+            <label class="form-label" style="font-size: 10px; color: #a1a1aa;">SELECT PAGE</label>
+            <div style="position: relative; margin-bottom: 6px;">
+              <input type="text" id="propLinkPageSearch" placeholder="Search pages..." style="font-size: 11px; margin-bottom: 4px;">
+            </div>
+            <select id="propLinkPageSelect" size="4" style="height: 100px; font-family: monospace; font-size: 11px;"></select>
+          </div>
+
+          <!-- Anchor Input Group -->
+          <div id="propLinkAnchorGroup" style="display: none; margin-bottom: 8px;">
+            <label class="form-label" style="font-size: 10px; color: #a1a1aa;">SELECT OR TYPE ANCHOR ID</label>
+            <div style="position: relative; margin-bottom: 6px;">
+              <select id="propLinkAnchorSelect" style="margin-bottom: 4px; font-family: monospace; font-size: 11px;">
+                <option value="">-- Choose existing ID --</option>
+              </select>
+            </div>
+            <input type="text" id="propLinkAnchorInput" placeholder="Or type custom (e.g. #contact)">
+          </div>
+
+          <!-- External URL Group -->
+          <div id="propLinkExternalGroup" style="display: none; margin-bottom: 8px;">
+            <label class="form-label" for="propLinkExternalInput" style="font-size: 10px; color: #a1a1aa;">URL / EMAIL / PHONE / FILE</label>
+            <input type="text" id="propLinkExternalInput" placeholder="e.g. https://google.com, mailto:foo@bar.com">
+          </div>
+
+          <!-- Target Selection -->
+          <div id="propLinkTargetGroup" style="display: none;">
+            <label class="form-label" for="propLinkTarget" style="font-size: 10px; color: #a1a1aa;">OPEN BEHAVIOR</label>
+            <select id="propLinkTarget">
+              <option value="_self">Open in same tab / screen</option>
+              <option value="_blank">Open in new tab (_blank)</option>
+            </select>
+          </div>
+        </div>
+
         <!-- Ink Treatments (Blend Modes) -->
         <div class="form-group" style="border-top: 1px solid #27272a; padding-top: 12px; margin-top: 12px;">
           <label class="form-label" for="propBlend">INK TREATMENT (Blend Mode)</label>
@@ -998,8 +1056,8 @@
       <div id="canvas">
         <div class="canvas-margin-guides"></div>
         <!-- Rendered elements go here -->
+        <div class="coords-indicator" id="canvas-height-info">Smartphone canvas (375px wide)</div>
       </div>
-      <div class="coords-indicator" id="canvas-height-info">Smartphone canvas (375px wide)</div>
     </div>
   </main>
 
@@ -1343,6 +1401,20 @@
     const propShadowBlurVal = document.getElementById('propShadowBlurVal');
     const propShadowX = document.getElementById('propShadowX');
     const propShadowY = document.getElementById('propShadowY');
+
+    // Hyperlink & Anchor ID Properties
+    const propCustomId = document.getElementById('propCustomId');
+    const propHyperlinkType = document.getElementById('propHyperlinkType');
+    const propLinkPageGroup = document.getElementById('propLinkPageGroup');
+    const propLinkPageSearch = document.getElementById('propLinkPageSearch');
+    const propLinkPageSelect = document.getElementById('propLinkPageSelect');
+    const propLinkAnchorGroup = document.getElementById('propLinkAnchorGroup');
+    const propLinkAnchorSelect = document.getElementById('propLinkAnchorSelect');
+    const propLinkAnchorInput = document.getElementById('propLinkAnchorInput');
+    const propLinkExternalGroup = document.getElementById('propLinkExternalGroup');
+    const propLinkExternalInput = document.getElementById('propLinkExternalInput');
+    const propLinkTargetGroup = document.getElementById('propLinkTargetGroup');
+    const propLinkTarget = document.getElementById('propLinkTarget');
 
     // FLOATING UI ELEMENTS
     const quickbar = document.getElementById('floating-quickbar');
@@ -1812,6 +1884,18 @@
           div.style.transform = '';
         }
         
+         // Create an intermediate blend wrapper to ensure ink treatment applies to the entire flattened element (including all stacked drop-shadows) without getting clipped or isolating individual shadow layers.
+        const blendWrapper = document.createElement('div');
+        blendWrapper.className = 'element-blend-wrapper';
+        blendWrapper.style.width = '100%';
+        blendWrapper.style.height = el.type === 'text' ? 'auto' : '100%';
+        blendWrapper.style.position = 'relative';
+        if (el.blendMode && el.blendMode !== 'normal') {
+          blendWrapper.style.mixBlendMode = el.blendMode;
+        } else {
+          blendWrapper.style.mixBlendMode = 'normal';
+        }
+
         // Create inner content wrapper to insulate layout handles from CSS effects
         const contentWrapper = document.createElement('div');
         contentWrapper.className = 'element-content-wrapper';
@@ -1819,10 +1903,6 @@
         contentWrapper.style.height = el.type === 'text' ? 'auto' : '100%';
         contentWrapper.style.boxSizing = 'border-box';
         contentWrapper.style.position = 'relative';
-
-        if (el.blendMode) {
-          contentWrapper.style.mixBlendMode = el.blendMode;
-        }
 
         // Apply universal border styles to content wrapper
         if (el.borderWidth) {
@@ -2024,8 +2104,9 @@
           `;
         }
 
-        // Append the content wrapper to the parent div
-        div.appendChild(contentWrapper);
+        // Append the content wrapper to the blend wrapper, and then the blend wrapper to the parent div
+        blendWrapper.appendChild(contentWrapper);
+        div.appendChild(blendWrapper);
 
         // Attach drag events
         setupDragEvents(div, idx);
@@ -2395,6 +2476,66 @@
       } else {
         textOnlyProps.style.display = 'none';
         shapeOnlyProps.style.display = 'none';
+      }
+
+      // Sync Hyperlink & Anchor ID
+      propCustomId.value = el.customId || '';
+      
+      const hlType = el.hyperlinkType || (el.hyperlink ? (el.hyperlink.startsWith('#') ? 'anchor' : (el.hyperlink.match(/^https?:\/\//) || el.hyperlink.includes('/') || el.hyperlink.includes(':') ? 'external' : 'page')) : 'none');
+      propHyperlinkType.value = hlType;
+      
+      // Target behavior
+      propLinkTarget.value = el.hyperlinkTarget || '_self';
+
+      // Hide all by default
+      propLinkPageGroup.style.display = 'none';
+      propLinkAnchorGroup.style.display = 'none';
+      propLinkExternalGroup.style.display = 'none';
+      propLinkTargetGroup.style.display = 'none';
+
+      // Populate existing anchors dropdown
+      propLinkAnchorSelect.innerHTML = '<option value="">-- Choose existing ID --</option>';
+      elements.forEach((element, index) => {
+        if (element.customId && index !== activeElementIndex) {
+          const opt = document.createElement('option');
+          opt.value = '#' + element.customId;
+          opt.textContent = `#${element.customId} (${element.type})`;
+          propLinkAnchorSelect.appendChild(opt);
+        }
+      });
+
+      if (hlType === 'page') {
+        propLinkPageGroup.style.display = 'block';
+        propLinkTargetGroup.style.display = 'block';
+        
+        // Populate page list options from pageSelect
+        const searchVal = propLinkPageSearch.value ? propLinkPageSearch.value.toLowerCase() : '';
+        propLinkPageSelect.innerHTML = '';
+        Array.from(pageSelect.options).forEach(opt => {
+          const p = opt.value;
+          if (p.toLowerCase().includes(searchVal)) {
+            const pageOpt = document.createElement('option');
+            pageOpt.value = p;
+            pageOpt.textContent = p;
+            if (el.hyperlink === p) {
+              pageOpt.selected = true;
+            }
+            propLinkPageSelect.appendChild(pageOpt);
+          }
+        });
+      } else if (hlType === 'anchor') {
+        propLinkAnchorGroup.style.display = 'block';
+        propLinkTargetGroup.style.display = 'block';
+        propLinkAnchorInput.value = el.hyperlink || '';
+        if (el.hyperlink && el.hyperlink.startsWith('#')) {
+          propLinkAnchorSelect.value = el.hyperlink;
+        } else {
+          propLinkAnchorSelect.value = '';
+        }
+      } else if (hlType === 'external') {
+        propLinkExternalGroup.style.display = 'block';
+        propLinkTargetGroup.style.display = 'block';
+        propLinkExternalInput.value = el.hyperlink || '';
       }
 
       // Simultaneously keep FLOATING INSPECTOR values in sync too!
@@ -2880,6 +3021,105 @@
         renderCanvas();
       });
     }
+
+    // Hyperlink & Anchor ID Event Listeners
+    propCustomId.addEventListener('input', () => {
+      if (activeElementIndex !== null) {
+        elements[activeElementIndex].customId = propCustomId.value.trim();
+        isUnsaved = true;
+        updateSaveButtonState();
+        renderCanvas();
+      }
+    });
+
+    propHyperlinkType.addEventListener('change', () => {
+      if (activeElementIndex !== null) {
+        const type = propHyperlinkType.value;
+        elements[activeElementIndex].hyperlinkType = type;
+        if (type === 'none') {
+          elements[activeElementIndex].hyperlink = '';
+        } else if (type === 'page') {
+          elements[activeElementIndex].hyperlink = propLinkPageSelect.value || pageSelect.value || '';
+        } else if (type === 'anchor') {
+          elements[activeElementIndex].hyperlink = propLinkAnchorInput.value || '#';
+        } else if (type === 'external') {
+          elements[activeElementIndex].hyperlink = propLinkExternalInput.value || 'https://';
+        }
+        isUnsaved = true;
+        updateSaveButtonState();
+        renderCanvas();
+        updatePropertiesPanel();
+      }
+    });
+
+    propLinkPageSearch.addEventListener('input', () => {
+      if (activeElementIndex !== null) {
+        const el = elements[activeElementIndex];
+        const searchVal = propLinkPageSearch.value.toLowerCase();
+        propLinkPageSelect.innerHTML = '';
+        Array.from(pageSelect.options).forEach(opt => {
+          const p = opt.value;
+          if (p.toLowerCase().includes(searchVal)) {
+            const pageOpt = document.createElement('option');
+            pageOpt.value = p;
+            pageOpt.textContent = p;
+            if (el.hyperlink === p) {
+              pageOpt.selected = true;
+            }
+            propLinkPageSelect.appendChild(pageOpt);
+          }
+        });
+      }
+    });
+
+    propLinkPageSelect.addEventListener('change', () => {
+      if (activeElementIndex !== null) {
+        elements[activeElementIndex].hyperlink = propLinkPageSelect.value;
+        isUnsaved = true;
+        updateSaveButtonState();
+        renderCanvas();
+      }
+    });
+
+    propLinkAnchorSelect.addEventListener('change', () => {
+      if (activeElementIndex !== null) {
+        const val = propLinkAnchorSelect.value;
+        if (val) {
+          propLinkAnchorInput.value = val;
+          elements[activeElementIndex].hyperlink = val;
+          isUnsaved = true;
+          updateSaveButtonState();
+          renderCanvas();
+        }
+      }
+    });
+
+    propLinkAnchorInput.addEventListener('input', () => {
+      if (activeElementIndex !== null) {
+        elements[activeElementIndex].hyperlink = propLinkAnchorInput.value.trim();
+        isUnsaved = true;
+        updateSaveButtonState();
+        renderCanvas();
+      }
+    });
+
+    propLinkExternalInput.addEventListener('input', () => {
+      if (activeElementIndex !== null) {
+        elements[activeElementIndex].hyperlink = propLinkExternalInput.value.trim();
+        isUnsaved = true;
+        updateSaveButtonState();
+        renderCanvas();
+      }
+    });
+
+    propLinkTarget.addEventListener('change', () => {
+      if (activeElementIndex !== null) {
+        elements[activeElementIndex].hyperlinkTarget = propLinkTarget.value;
+        isUnsaved = true;
+        updateSaveButtonState();
+        renderCanvas();
+      }
+    });
 
     // Letter-spacing (Tracking) & Line-height (Leading) Event Listeners
     propTracking.addEventListener('input', () => {

@@ -114,8 +114,31 @@ function parseMultipart(bodyBuffer, contentType) {
   return parts;
 }
 
+function getRelativeHref(currentPath, targetPath) {
+  if (!targetPath) return '';
+  if (targetPath.match(/^(https?:\/\/|mailto:|tel:|#)/i)) {
+    return targetPath;
+  }
+  const current = currentPath === '/' ? '' : currentPath.replace(/^\//, '').replace(/\/$/, '');
+  const target = targetPath === '/' ? '' : targetPath.replace(/^\//, '').replace(/\/$/, '');
+  if (current === target) {
+    return 'index.html';
+  }
+  const currentSegments = current ? current.split('/') : [];
+  const depth = currentSegments.length;
+  let prefix = '';
+  for (let i = 0; i < depth; i++) {
+    prefix += '../';
+  }
+  if (!target) {
+    return prefix + 'index.html';
+  } else {
+    return prefix + target + '/index.html';
+  }
+}
+
 // Compiler to generate pixel-perfect vector-locked responsive HTML
-function compileHtml(elements = [], googleFonts = [], backgroundColor = '#111111') {
+function compileHtml(elements = [], googleFonts = [], backgroundColor = '#111111', pagePath = '/') {
   const fontLinks = (googleFonts || [])
     .map(font => `<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=${encodeURIComponent(font)}:wght@400;700;800;900&display=swap">`)
     .join('\n  ');
@@ -205,6 +228,9 @@ function compileHtml(elements = [], googleFonts = [], backgroundColor = '#111111
       }
     }
 
+    let html = '';
+    const elementId = el.customId || `element-${idx}`;
+
     if (el.type === 'text') {
       styleParts.push(`font-size: calc(${el.fontSize || 4} * var(--w-unit))`);
       styleParts.push(`font-family: '${el.fontFamily || 'Inter'}', sans-serif`);
@@ -243,12 +269,12 @@ function compileHtml(elements = [], googleFonts = [], backgroundColor = '#111111
       }
       
       const formattedText = (el.text || '').replace(/\n/g, '<br>');
-      return `    <div id="element-${idx}" class="zine-element text-element" style="${styleParts.join('; ')}">${formattedText}</div>`;
+      html = `    <div id="${elementId}" class="zine-element text-element" style="${styleParts.join('; ')}">${formattedText}</div>`;
     } else if (el.type === 'image') {
       if (el.aspectRatio) {
         styleParts.push(`aspect-ratio: ${el.aspectRatio}`);
       }
-      return `    <img id="element-${idx}" class="zine-element image-element" src="${el.src}" style="${styleParts.join('; ')}; object-fit: cover;" referrerPolicy="no-referrer" />`;
+      html = `    <img id="${elementId}" class="zine-element image-element" src="${el.src}" style="${styleParts.join('; ')}; object-fit: cover;" referrerPolicy="no-referrer" />`;
     } else if (el.type === 'shape') {
       const widthUnits = el.w || 30;
       const heightUnits = el.h || widthUnits;
@@ -329,13 +355,22 @@ function compileHtml(elements = [], googleFonts = [], backgroundColor = '#111111
         shapeSvgElement = `<path d="${pathData}" fill="${fillAttr}" stroke="${strokeAttr}" stroke-width="${strokeWidthAttr}" stroke-linecap="round" stroke-linejoin="round" />`;
       }
 
-      return `    <div id="element-${idx}" class="zine-element shape-element" style="${styleParts.join('; ')}">
+      html = `    <div id="${elementId}" class="zine-element shape-element" style="${styleParts.join('; ')}">
       <svg viewBox="0 0 100 100" width="100%" height="100%" preserveAspectRatio="none">${gradientDef}
         ${shapeSvgElement}
       </svg>
     </div>`;
     }
-    return '';
+
+    if (html && el.hyperlink) {
+      const relHref = getRelativeHref(pagePath, el.hyperlink);
+      const targetAttr = el.hyperlinkTarget === '_blank' ? ' target="_blank"' : '';
+      return `    <a href="${relHref}"${targetAttr} style="display: contents; text-decoration: none; color: inherit; outline: none;">
+    ${html.trim()}
+    </a>`;
+    }
+
+    return html;
   }).join('\n');
 
   let containerBackgroundStyle = (backgroundColor.includes('gradient') || backgroundColor.includes('url('))
@@ -343,7 +378,7 @@ function compileHtml(elements = [], googleFonts = [], backgroundColor = '#111111
     : `background-color: ${backgroundColor};`;
 
   return `<!DOCTYPE html>
-<html lang="en">
+<html lang="en" style="scroll-behavior: smooth;">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -575,7 +610,10 @@ const server = http.createServer((req, res) => {
             paddingTop: el.paddingTop !== undefined ? Number(el.paddingTop) : undefined,
             paddingRight: el.paddingRight !== undefined ? Number(el.paddingRight) : undefined,
             paddingBottom: el.paddingBottom !== undefined ? Number(el.paddingBottom) : undefined,
-            paddingLeft: el.paddingLeft !== undefined ? Number(el.paddingLeft) : undefined
+            paddingLeft: el.paddingLeft !== undefined ? Number(el.paddingLeft) : undefined,
+            customId: el.customId !== undefined ? String(el.customId) : undefined,
+            hyperlink: el.hyperlink !== undefined ? String(el.hyperlink) : undefined,
+            hyperlinkTarget: el.hyperlinkTarget !== undefined ? String(el.hyperlinkTarget) : undefined
           };
         });
 
@@ -589,7 +627,7 @@ const server = http.createServer((req, res) => {
         fs.writeFileSync(path.join(cleanDir, 'state.json'), JSON.stringify(statePayload, null, 2), 'utf8');
 
         // Compile HTML
-        const compiledHtml = compileHtml(statePayload.elements, statePayload.googleFonts, statePayload.backgroundColor);
+        const compiledHtml = compileHtml(statePayload.elements, statePayload.googleFonts, statePayload.backgroundColor, pagePath);
         fs.writeFileSync(path.join(cleanDir, 'index.html'), compiledHtml, 'utf8');
 
         res.writeHead(200, { 'Content-Type': 'application/json' });
