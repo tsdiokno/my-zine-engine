@@ -1,6 +1,17 @@
 # 📼 Zine Engine
 
-A local-first, spatial vector-locked digital publishing playground designed for artists, zinesters, and creative writers. Build media-rich, responsive digital publications that scale beautifully to any screen width using an intuitive offline editor.
+**Zine Engine** is a local, offline-first digital scrapbook. It bypasses complex web frameworks to give you a drag-and-drop editor that exports 100% static, dependency-free HTML and CSS. You can host it anywhere, share it on a USB drive, or archive it forever.
+
+Here are the principles that guide it:
+
+## Core Principles
+
+1. **Scrapbooking Over Systems:** No databases, CMS, or deployment scripts. Just drag, drop, layer, and save.
+2. **The Immutable Canvas:** We reject responsive reflowing. Your layout acts like a physical poster that scales proportionally on any screen to preserve your exact spatial intent.
+3. **Vernacular Motion:** There are no complex animation timelines. Motion is achieved strictly through mindful layout and GIFs.
+4. **Static Pages, Smart Links:** There is no auto-generated navigation. You connect pages manually, but the engine scans your local folders to make linking easy.
+5. **Zero Dependencies:** The downloaded app requires no `npm install`, no cloud accounts, and no internet connection to run.
+6. **HTML as the Source of Truth:** The exported output contains no tracking or external libraries. It is purely static, acts as a lossless backup, and will outlast today's platforms.
 
 ---
 
