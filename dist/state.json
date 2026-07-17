@@ -1,0 +1,47 @@
+{
+  "elements": [
+    {
+      "type": "text",
+      "x": 10,
+      "y": 15,
+      "w": 80,
+      "fontSize": 9,
+      "fontFamily": "Syne",
+      "fontWeight": "900",
+      "color": "#ffffff",
+      "textAlign": "center",
+      "blendMode": "normal",
+      "text": "DIGITAL PRINT\nZINE VOL. I"
+    },
+    {
+      "type": "text",
+      "x": 15,
+      "y": 40,
+      "w": 70,
+      "fontSize": 3.5,
+      "fontFamily": "Inter",
+      "fontWeight": "400",
+      "color": "#888888",
+      "textAlign": "center",
+      "blendMode": "normal",
+      "text": "This is a mobile-first, spatial vector-locked digital publication. Built with the Fluid Canvas layout engine, the proportions scale perfectly regardless of screen size."
+    },
+    {
+      "type": "text",
+      "x": 10,
+      "y": 70,
+      "w": 80,
+      "fontSize": 5,
+      "fontFamily": "Syne",
+      "fontWeight": "700",
+      "color": "#ff3b30",
+      "textAlign": "center",
+      "blendMode": "difference",
+      "text": "DRAG, DESIGN & PRINT"
+    }
+  ],
+  "googleFonts": [
+    "Syne"
+  ],
+  "backgroundColor": "#0a0a0a"
+}
