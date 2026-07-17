@@ -1,17 +1,19 @@
 # 📼 Zine Engine
 
-**Zine Engine** is a local, offline-first digital scrapbook. It bypasses complex web frameworks to give you a drag-and-drop editor that exports 100% static, dependency-free HTML and CSS. You can host it anywhere, share it on a USB drive, or archive it forever.
+We live in a screen-based world, but the modern web has traded creative freedom for algorithmic optimization and cloud dependency.
 
-Here are the principles that guide it:
+**Zine Engine** exists to reclaim the browser as a site for tactile, autonomous art. We concede the hardware—the mobile device, the browser engine—but we reject the corporate ecosystem. It is an offline-first, drag-and-drop digital scrapbook that outputs 100% static, dependency-free HTML. You build it off the grid, and it lasts forever.
 
-## Core Principles
+Here is the "why" behind how it works:
 
-1. **Scrapbooking Over Systems:** No databases, CMS, or deployment scripts. Just drag, drop, layer, and save.
-2. **The Immutable Canvas:** We reject responsive reflowing. Your layout acts like a physical poster that scales proportionally on any screen to preserve your exact spatial intent.
-3. **Vernacular Motion:** There are no complex animation timelines. Motion is achieved strictly through mindful layout and GIFs.
-4. **Static Pages, Smart Links:** There is no auto-generated navigation. You connect pages manually, but the engine scans your local folders to make linking easy.
-5. **Zero Dependencies:** The downloaded app requires no `npm install`, no cloud accounts, and no internet connection to run.
-6. **HTML as the Source of Truth:** The exported output contains no tracking or external libraries. It is purely static, acts as a lossless backup, and will outlast today's platforms.
+## CORE PRINCIPLES
+
+1. **Scrapbooking Over Systems:** Creation should be immediate. There are no databases, CMS, or deployment scripts. Just drag, drop, layer, and save.
+2. **The Conceded Canvas:** We accept the mobile screen as our baseline medium, but we refuse to let algorithms break the art apart to fit other devices. Your layout acts as a fixed poster that simply scales up proportionally on a desktop, preserving your exact spatial intent.
+3. **Vernacular Motion:** We prioritize web-native culture over slick production. There are no complex animation timelines—motion is achieved strictly through mindful layout and the raw inclusion of GIFs.
+4. **Architectural Autonomy:** You build the paths. There is no auto-generated navigation. Every page is a blank sheet you connect manually, aided by an engine that quietly maps your local files so you can link them effortlessly.
+5. **The Subversive Stack:** We use heavy modern frameworks to build the editor, but strip them away before it reaches your hands. The app you download requires zero dependencies, no cloud accounts, and no internet to run.
+6. **HTML as the Artifact:** Digital art shouldn't rot when servers die. The exported zine is purely static, acts as a lossless backup, and leaves no trace of tracking scripts or external libraries.
 
 ---
 
