@@ -168,12 +168,41 @@ function compileHtml(elements = [], googleFonts = [], backgroundColor = '#111111
       styleParts.push(`overflow: hidden`);
     }
 
+    if (el.opacity !== undefined && el.opacity !== null) {
+      styleParts.push(`opacity: ${Number(el.opacity) / 100}`);
+    }
+
     if (el.shadowEnable) {
-      const sx = el.shadowX !== undefined ? el.shadowX : 4;
-      const sy = el.shadowY !== undefined ? el.shadowY : 4;
-      const sblur = el.shadowBlur !== undefined ? el.shadowBlur : 8;
-      const scolor = el.shadowColor || '#000000';
-      styleParts.push(`filter: drop-shadow(${sx}px ${sy}px ${sblur}px ${scolor})`);
+      if (el.shadows && el.shadows.length > 0) {
+        const shadowFilters = el.shadows.map(s => {
+          const sx = s.x !== undefined ? s.x : 4;
+          const sy = s.y !== undefined ? s.y : 4;
+          const sblur = s.blur !== undefined ? s.blur : 8;
+          const scolor = s.color || '#000000';
+          const sopacity = s.opacity !== undefined ? s.opacity : 1;
+          
+          const hex = scolor.replace('#', '');
+          let r = 0, g = 0, b = 0;
+          if (hex.length === 3) {
+            r = parseInt(hex[0] + hex[0], 16) || 0;
+            g = parseInt(hex[1] + hex[1], 16) || 0;
+            b = parseInt(hex[2] + hex[2], 16) || 0;
+          } else if (hex.length === 6) {
+            r = parseInt(hex.substring(0, 2), 16) || 0;
+            g = parseInt(hex.substring(2, 4), 16) || 0;
+            b = parseInt(hex.substring(4, 6), 16) || 0;
+          }
+          const rgbaColor = `rgba(${r}, ${g}, ${b}, ${sopacity})`;
+          return `drop-shadow(${sx}px ${sy}px ${sblur}px ${rgbaColor})`;
+        }).join(' ');
+        styleParts.push(`filter: ${shadowFilters}`);
+      } else {
+        const sx = el.shadowX !== undefined ? el.shadowX : 4;
+        const sy = el.shadowY !== undefined ? el.shadowY : 4;
+        const sblur = el.shadowBlur !== undefined ? el.shadowBlur : 8;
+        const scolor = el.shadowColor || '#000000';
+        styleParts.push(`filter: drop-shadow(${sx}px ${sy}px ${sblur}px ${scolor})`);
+      }
     }
 
     if (el.type === 'text') {
@@ -183,6 +212,20 @@ function compileHtml(elements = [], googleFonts = [], backgroundColor = '#111111
       styleParts.push(`font-weight: ${el.fontWeight || '400'}`);
       styleParts.push(`white-space: pre-wrap`);
       styleParts.push(`line-height: ${el.leading !== undefined && el.leading !== '' ? el.leading : 1.2}`);
+
+      // Padding for text elements
+      if (el.paddingTop !== undefined) {
+        styleParts.push(`padding-top: calc(${el.paddingTop} * var(--w-unit))`);
+      }
+      if (el.paddingRight !== undefined) {
+        styleParts.push(`padding-right: calc(${el.paddingRight} * var(--w-unit))`);
+      }
+      if (el.paddingBottom !== undefined) {
+        styleParts.push(`padding-bottom: calc(${el.paddingBottom} * var(--w-unit))`);
+      }
+      if (el.paddingLeft !== undefined) {
+        styleParts.push(`padding-left: calc(${el.paddingLeft} * var(--w-unit))`);
+      }
 
       if (el.tracking !== undefined && el.tracking !== '') {
         styleParts.push(`letter-spacing: ${el.tracking}px`);
@@ -232,6 +275,37 @@ function compileHtml(elements = [], googleFonts = [], backgroundColor = '#111111
         </linearGradient>
       </defs>`;
         fillAttr = `url(#shape-grad-${idx})`;
+      } else if (el.fillType === 'image') {
+        const imgUrl = el.bgImage || '';
+        const imgMode = el.bgImageMode || 'cover';
+        let preserveRatio = 'none';
+        let patternUnits = 'objectBoundingBox';
+
+        if (imgMode === 'cover') {
+          preserveRatio = 'xMidYMid slice';
+        } else if (imgMode === 'contain') {
+          preserveRatio = 'xMidYMid meet';
+        } else if (imgMode === 'tile') {
+          patternUnits = 'userSpaceOnUse';
+          preserveRatio = 'none';
+        }
+
+        if (patternUnits === 'userSpaceOnUse') {
+          gradientDef = `
+      <defs>
+        <pattern id="shape-img-${idx}" width="40" height="40" patternUnits="userSpaceOnUse">
+          <image href="${imgUrl}" x="0" y="0" width="40" height="40" preserveAspectRatio="${preserveRatio}" />
+        </pattern>
+      </defs>`;
+        } else {
+          gradientDef = `
+      <defs>
+        <pattern id="shape-img-${idx}" width="1" height="1" patternContentUnits="objectBoundingBox">
+          <image href="${imgUrl}" x="0" y="0" width="1" height="1" preserveAspectRatio="${preserveRatio}" />
+        </pattern>
+      </defs>`;
+        }
+        fillAttr = `url(#shape-img-${idx})`;
       }
 
       const strokeAttr = el.strokeColor || 'none';
@@ -264,7 +338,7 @@ function compileHtml(elements = [], googleFonts = [], backgroundColor = '#111111
     return '';
   }).join('\n');
 
-  let containerBackgroundStyle = backgroundColor.includes('gradient')
+  let containerBackgroundStyle = (backgroundColor.includes('gradient') || backgroundColor.includes('url('))
     ? `background: ${backgroundColor};`
     : `background-color: ${backgroundColor};`;
 
@@ -486,7 +560,22 @@ const server = http.createServer((req, res) => {
             shadowY: el.shadowY !== undefined ? Number(el.shadowY) : undefined,
             tracking: el.tracking !== undefined ? String(el.tracking) : undefined,
             leading: el.leading !== undefined ? Number(el.leading) : undefined,
-            aspectRatio: el.aspectRatio
+            aspectRatio: el.aspectRatio,
+            bgImage: el.bgImage,
+            bgImageMode: el.bgImageMode,
+            opacity: el.opacity !== undefined && el.opacity !== null ? Number(el.opacity) : undefined,
+            shadows: el.shadows ? el.shadows.map(s => ({
+              x: s.x !== undefined ? Number(s.x) : 4,
+              y: s.y !== undefined ? Number(s.y) : 4,
+              blur: s.blur !== undefined ? Number(s.blur) : 8,
+              color: s.color || '#000000',
+              opacity: s.opacity !== undefined ? Number(s.opacity) : 1
+            })) : undefined,
+            linkPadding: el.linkPadding !== undefined ? !!el.linkPadding : undefined,
+            paddingTop: el.paddingTop !== undefined ? Number(el.paddingTop) : undefined,
+            paddingRight: el.paddingRight !== undefined ? Number(el.paddingRight) : undefined,
+            paddingBottom: el.paddingBottom !== undefined ? Number(el.paddingBottom) : undefined,
+            paddingLeft: el.paddingLeft !== undefined ? Number(el.paddingLeft) : undefined
           };
         });
 

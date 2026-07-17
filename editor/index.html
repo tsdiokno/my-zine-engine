@@ -209,15 +209,18 @@
       min-height: 667px;
       background-color: transparent !important;
       position: relative;
-      border: 1.5px dashed rgba(255, 255, 255, 0.2);
-      box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.2), 0 20px 50px rgba(0,0,0,0.4);
-      border-radius: 8px;
+      border-left: 1.5px dashed rgba(255, 255, 255, 0.25);
+      border-right: 1.5px dashed rgba(255, 255, 255, 0.25);
+      border-top: none;
+      border-bottom: none;
+      box-shadow: none;
+      border-radius: 0;
       overflow: visible;
-      transition: border-color 0.2s ease, box-shadow 0.2s ease;
+      transition: border-color 0.2s ease;
     }
     #canvas:hover {
-      border-color: rgba(59, 130, 246, 0.45);
-      box-shadow: 0 0 0 1.5px rgba(59, 130, 246, 0.2), 0 20px 50px rgba(0,0,0,0.5);
+      border-left-color: rgba(59, 130, 246, 0.5);
+      border-right-color: rgba(59, 130, 246, 0.5);
     }
     
     /* Ruler / boundary overlay indicators */
@@ -443,17 +446,7 @@
 
     /* Floating Quick action toolbar above selected element */
     #floating-quickbar {
-      position: absolute;
-      background: #18181b;
-      border: 1px solid #27272a;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.4);
-      border-radius: 8px;
-      padding: 4px;
-      display: none;
-      align-items: center;
-      gap: 4px;
-      z-index: 998;
-      pointer-events: auto;
+      display: none !important;
     }
     .quickbar-btn {
       width: 28px;
@@ -551,6 +544,7 @@
       <select id="bgFillType" style="margin-bottom: 8px;">
         <option value="solid">Solid Color</option>
         <option value="gradient">Linear Gradient</option>
+        <option value="image">Image Background</option>
       </select>
       
       <!-- Solid background fields -->
@@ -569,6 +563,30 @@
           <input type="color" id="bgGradStart" style="height: 36px; padding: 2px; cursor: pointer;" value="#111111">
           <input type="color" id="bgGradEnd" style="height: 36px; padding: 2px; cursor: pointer;" value="#222225">
         </div>
+      </div>
+
+      <!-- Image background fields -->
+      <div id="bgImageGroup" style="display: none;">
+        <label class="form-label">IMAGE SOURCE URL</label>
+        <div class="input-row" style="margin-bottom: 8px;">
+          <input type="text" id="bgImageInput" placeholder="Paste image URL..." style="flex-grow: 1;">
+          <button class="btn" id="bgImageUploadBtn" style="padding: 0 12px;" title="Upload Image" type="button">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+          </button>
+        </div>
+        <label class="form-label">BACKGROUND FIT</label>
+        <select id="bgImageMode">
+          <option value="cover">Cover (Aspect Fill)</option>
+          <option value="contain">Contain (Aspect Fit)</option>
+          <option value="stretch">Stretch (Fill Canvas)</option>
+          <option value="tile">Tile (Repeat)</option>
+        </select>
+      </div>
+
+      <!-- Workspace dots toggle -->
+      <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 12px; border-top: 1px solid #27272a; padding-top: 12px;">
+        <label class="form-label" style="margin-bottom: 0;">WORKSPACE DOT GRID</label>
+        <input type="checkbox" id="toggleDots" style="width: auto; cursor: pointer;" checked>
       </div>
     </div>
 
@@ -628,6 +646,14 @@
           </div>
         </div>
 
+        <div class="form-group">
+          <label class="form-label">OPACITY LEVEL (0-100%)</label>
+          <div class="slider-row">
+            <input type="range" id="propOpacity" min="0" max="100" step="1" value="100">
+            <span class="slider-val" id="propOpacityVal">100%</span>
+          </div>
+        </div>
+
         <!-- Transformations Section -->
         <div class="form-group" style="border-top: 1px solid #27272a; padding-top: 12px; margin-top: 12px;">
           <label class="form-label" style="font-weight: 600; color: #f4f4f5;">ADVANCED TRANSFORMS</label>
@@ -679,6 +705,7 @@
           <select id="propFillType" style="margin-bottom: 8px;">
             <option value="solid">Solid Color Fill</option>
             <option value="gradient">Linear Gradient Fill</option>
+            <option value="image">Image Background Fill</option>
           </select>
 
           <!-- Solid Group -->
@@ -698,6 +725,24 @@
               <input type="color" id="propGradStart" style="height: 36px; padding: 2px; cursor: pointer;">
               <input type="color" id="propGradEnd" style="height: 36px; padding: 2px; cursor: pointer;">
             </div>
+          </div>
+
+          <!-- Image Fill Group for shapes & text -->
+          <div id="propImageGroup" style="display: none;">
+            <label class="form-label">IMAGE FILL SOURCE URL</label>
+            <div class="input-row" style="margin-bottom: 8px;">
+              <input type="text" id="propBgImageInput" placeholder="Paste image URL..." style="flex-grow: 1;">
+              <button class="btn" id="propBgImageUploadBtn" style="padding: 0 12px;" title="Upload Image" type="button">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+              </button>
+            </div>
+            <label class="form-label">BACKGROUND FIT</label>
+            <select id="propBgImageMode" style="margin-bottom: 8px;">
+              <option value="cover">Cover (Aspect Fill)</option>
+              <option value="contain">Contain (Aspect Fit)</option>
+              <option value="stretch">Stretch (Fill Shape)</option>
+              <option value="tile">Tile (Repeat)</option>
+            </select>
           </div>
         </div>
 
@@ -755,6 +800,60 @@
               <button class="btn" id="alignCenter" title="Center">C</button>
               <button class="btn" id="alignRight" title="Right">R</button>
               <button class="btn" id="alignJustify" title="Justify">J</button>
+            </div>
+          </div>
+
+          <div class="form-group" style="margin-top: 12px; border-top: 1px dashed #27272a; padding-top: 12px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+              <label class="form-label" style="margin-bottom: 0;">TEXT PADDING</label>
+              <label style="display: flex; align-items: center; gap: 4px; font-size: 10px; color: #a1a1aa; cursor: pointer;">
+                <input type="checkbox" id="propLinkPadding" checked style="cursor: pointer;">
+                Link Sides
+              </label>
+            </div>
+            
+            <!-- Linked padding controls (Single slider) -->
+            <div id="propLinkedPaddingGroup">
+              <div class="slider-row">
+                <input type="range" id="propPaddingAll" min="0" max="20" step="0.5" value="0" style="width: 100%;">
+                <span class="slider-val" id="propPaddingAllVal">0</span>
+              </div>
+            </div>
+            
+            <!-- Individual padding controls (4 sliders in a 2x2 grid) -->
+            <div id="propIndividualPaddingGroup" style="display: none; gap: 8px; flex-direction: column;">
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                <div>
+                  <label class="form-label" style="font-size: 9px; color: #71717a; margin-bottom: 2px;">TOP</label>
+                  <div class="slider-row" style="gap: 4px;">
+                    <input type="range" id="propPaddingTop" min="0" max="20" step="0.5" value="0" style="width: 100%;">
+                    <span class="slider-val" id="propPaddingTopVal" style="font-size: 9px; min-width: 18px;">0</span>
+                  </div>
+                </div>
+                <div>
+                  <label class="form-label" style="font-size: 9px; color: #71717a; margin-bottom: 2px;">RIGHT</label>
+                  <div class="slider-row" style="gap: 4px;">
+                    <input type="range" id="propPaddingRight" min="0" max="20" step="0.5" value="0" style="width: 100%;">
+                    <span class="slider-val" id="propPaddingRightVal" style="font-size: 9px; min-width: 18px;">0</span>
+                  </div>
+                </div>
+              </div>
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                <div>
+                  <label class="form-label" style="font-size: 9px; color: #71717a; margin-bottom: 2px;">BOTTOM</label>
+                  <div class="slider-row" style="gap: 4px;">
+                    <input type="range" id="propPaddingBottom" min="0" max="20" step="0.5" value="0" style="width: 100%;">
+                    <span class="slider-val" id="propPaddingBottomVal" style="font-size: 9px; min-width: 18px;">0</span>
+                  </div>
+                </div>
+                <div>
+                  <label class="form-label" style="font-size: 9px; color: #71717a; margin-bottom: 2px;">LEFT</label>
+                  <div class="slider-row" style="gap: 4px;">
+                    <input type="range" id="propPaddingLeft" min="0" max="20" step="0.5" value="0" style="width: 100%;">
+                    <span class="slider-val" id="propPaddingLeftVal" style="font-size: 9px; min-width: 18px;">0</span>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -854,35 +953,15 @@
         <!-- Universal Drop Shadow Controls -->
         <div class="form-group" style="border-top: 1px solid #27272a; padding-top: 12px; margin-top: 12px;">
           <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
-            <label class="form-label" style="font-weight: 600; color: #f4f4f5; margin-bottom: 0;">DROP SHADOW EFFECTS</label>
+            <label class="form-label" style="font-weight: 600; color: #f4f4f5; margin-bottom: 0;">STACKING DROP SHADOWS</label>
             <input type="checkbox" id="propShadowEnable" style="width: auto; cursor: pointer; margin-left: 8px;">
           </div>
 
           <div id="shadowControlsGroup" style="display: none;">
-            <div style="margin-bottom: 8px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; align-items: center;">
-              <div>
-                <span style="font-size: 10px; color: #a1a1aa;">SHADOW COLOR</span>
-                <input type="color" id="propShadowColor" style="height: 36px; padding: 2px; width: 100%; border: none; background: transparent; cursor: pointer;" value="#000000">
-              </div>
-              <div>
-                <span style="font-size: 10px; color: #a1a1aa;">BLUR RADIUS</span>
-                <div class="slider-row">
-                  <input type="range" id="propShadowBlur" min="0" max="30" step="1" value="8" style="flex-grow: 1;">
-                  <span class="slider-val" id="propShadowBlurVal" style="font-size: 10px;">8px</span>
-                </div>
-              </div>
-            </div>
-
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
-              <div>
-                <span style="font-size: 10px; color: #a1a1aa;">OFFSET X</span>
-                <input type="number" id="propShadowX" value="4" step="1" style="background-color: #18181b; border: 1px solid #27272a; padding: 4px; border-radius: 4px; color: white; width: 100%;">
-              </div>
-              <div>
-                <span style="font-size: 10px; color: #a1a1aa;">OFFSET Y</span>
-                <input type="number" id="propShadowY" value="4" step="1" style="background-color: #18181b; border: 1px solid #27272a; padding: 4px; border-radius: 4px; color: white; width: 100%;">
-              </div>
-            </div>
+            <div id="shadowListContainer" style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px;"></div>
+            <button class="btn btn-full" id="addShadowBtn" type="button" style="font-size: 11px; padding: 6px 8px; margin-top: 4px;">
+              + Add Shadow Layer
+            </button>
           </div>
         </div>
 
@@ -955,12 +1034,20 @@
   <!-- FLOATING CONTEXT MENU -->
   <div id="context-menu">
     <div class="menu-item" id="menu-bring-forward">
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 11 12 6 7 11"></polyline><polyline points="17 18 12 13 7 18"></polyline></svg>
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 11 12 6 7 11"></polyline></svg>
       Bring Forward
     </div>
+    <div class="menu-item" id="menu-bring-front">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 11 12 6 7 11"></polyline><polyline points="17 18 12 13 7 18"></polyline></svg>
+      Bring to Front (Top)
+    </div>
     <div class="menu-item" id="menu-send-backward">
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="7 13 12 18 17 13"></polyline><polyline points="7 6 12 11 17 6"></polyline></svg>
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="7 13 12 18 17 13"></polyline></svg>
       Send Backward
+    </div>
+    <div class="menu-item" id="menu-send-back">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="7 13 12 18 17 13"></polyline><polyline points="7 6 12 11 17 6"></polyline></svg>
+      Send to Back (Bottom)
     </div>
     <div class="menu-divider"></div>
     <div class="menu-item" id="menu-rotate-ccw">Rotate -15°</div>
@@ -971,6 +1058,11 @@
     <div class="menu-item" id="menu-edit-floating">
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4z"></path></svg>
       Direct Tuning Popup
+    </div>
+    <div class="menu-divider"></div>
+    <div class="menu-item" id="menu-duplicate">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+      Duplicate Element (Ctrl+D)
     </div>
     <div class="menu-divider"></div>
     <div class="menu-item danger" id="menu-delete">
@@ -1105,13 +1197,16 @@
       const div = canvas.querySelector(`.editor-element[data-index="${idx}"]`);
       if (!div) return;
       
-      div.contentEditable = 'true';
-      div.focus();
+      const contentWrapper = div.querySelector('.element-content-wrapper');
+      if (!contentWrapper) return;
+      
+      contentWrapper.contentEditable = 'true';
+      contentWrapper.focus();
       
       // Place cursor at the end of the text
       const range = document.createRange();
       const sel = window.getSelection();
-      range.selectNodeContents(div);
+      range.selectNodeContents(contentWrapper);
       range.collapse(false);
       sel.removeAllRanges();
       sel.addRange(range);
@@ -1217,6 +1312,21 @@
     const propLeading = document.getElementById('propLeading');
     const propLeadingVal = document.getElementById('propLeadingVal');
 
+    // Padding
+    const propLinkPadding = document.getElementById('propLinkPadding');
+    const propPaddingAll = document.getElementById('propPaddingAll');
+    const propPaddingAllVal = document.getElementById('propPaddingAllVal');
+    const propPaddingTop = document.getElementById('propPaddingTop');
+    const propPaddingTopVal = document.getElementById('propPaddingTopVal');
+    const propPaddingRight = document.getElementById('propPaddingRight');
+    const propPaddingRightVal = document.getElementById('propPaddingRightVal');
+    const propPaddingBottom = document.getElementById('propPaddingBottom');
+    const propPaddingBottomVal = document.getElementById('propPaddingBottomVal');
+    const propPaddingLeft = document.getElementById('propPaddingLeft');
+    const propPaddingLeftVal = document.getElementById('propPaddingLeftVal');
+    const propLinkedPaddingGroup = document.getElementById('propLinkedPaddingGroup');
+    const propIndividualPaddingGroup = document.getElementById('propIndividualPaddingGroup');
+
     // Borders & Element Radius
     const propBorderWidth = document.getElementById('propBorderWidth');
     const propBorderWidthVal = document.getElementById('propBorderWidthVal');
@@ -1274,6 +1384,171 @@
       zigzag: 'M 0,50 L 20,30 L 40,70 L 60,30 L 80,70 L 100,50 L 100,100 L 0,100 Z',
       arrow: 'M 10,40 H 60 V 15 L 95,50 L 60,85 V 60 H 10 Z'
     };
+
+    // New element variables
+    const propOpacity = document.getElementById('propOpacity');
+    const propOpacityVal = document.getElementById('propOpacityVal');
+    const propBgImageInput = document.getElementById('propBgImageInput');
+    const propBgImageMode = document.getElementById('propBgImageMode');
+    const propBgImageUploadBtn = document.getElementById('propBgImageUploadBtn');
+    const propImageGroup = document.getElementById('propImageGroup');
+
+    function hexToRgba(hex, alpha) {
+      hex = hex.replace('#', '');
+      if (hex.length === 3) {
+        hex = hex[0] + hex[0] + hex[1] + hex[1] + hex[2] + hex[2];
+      }
+      const r = parseInt(hex.substring(0, 2), 16) || 0;
+      const g = parseInt(hex.substring(2, 4), 16) || 0;
+      const b = parseInt(hex.substring(4, 6), 16) || 0;
+      return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+    }
+
+    function renderShadowStackList() {
+      const container = document.getElementById('shadowListContainer');
+      if (!container) return;
+      container.innerHTML = '';
+
+      if (activeElementIndex === null || !elements[activeElementIndex]) return;
+      const el = elements[activeElementIndex];
+
+      // Initialize shadows array defensively if empty
+      if (!el.shadows) {
+        el.shadows = [];
+        // If there was an old single shadow, convert it
+        if (el.shadowX !== undefined || el.shadowY !== undefined || el.shadowBlur !== undefined || el.shadowColor) {
+          el.shadows.push({
+            x: el.shadowX !== undefined ? el.shadowX : 4,
+            y: el.shadowY !== undefined ? el.shadowY : 4,
+            blur: el.shadowBlur !== undefined ? el.shadowBlur : 8,
+            color: el.shadowColor || '#000000',
+            opacity: 1
+          });
+        } else {
+          el.shadows.push({ x: 4, y: 4, blur: 8, color: '#000000', opacity: 0.5 });
+        }
+      }
+
+      el.shadows.forEach((shadow, sIdx) => {
+        const row = document.createElement('div');
+        row.style.background = '#111113';
+        row.style.border = '1px solid #27272a';
+        row.style.borderRadius = '6px';
+        row.style.padding = '8px';
+        row.style.display = 'flex';
+        row.style.flexDirection = 'column';
+        row.style.gap = '6px';
+
+        // Header with Delete button
+        const header = document.createElement('div');
+        header.style.display = 'flex';
+        header.style.justifyContent = 'space-between';
+        header.style.alignItems = 'center';
+        header.innerHTML = `
+          <span style="font-size: 10px; font-weight: bold; color: #a1a1aa; text-transform: uppercase;">Layer #${sIdx + 1}</span>
+          <button type="button" style="background: transparent; border: none; color: #ef4444; font-size: 10px; cursor: pointer; padding: 2px 4px;">Delete</button>
+        `;
+        header.querySelector('button').addEventListener('click', () => {
+          el.shadows.splice(sIdx, 1);
+          isUnsaved = true;
+          updateSaveButtonState();
+          renderCanvas();
+          renderShadowStackList();
+        });
+        row.appendChild(header);
+
+        // Grid of offsets X, Y
+        const grid = document.createElement('div');
+        grid.style.display = 'grid';
+        grid.style.gridTemplateColumns = '1fr 1fr';
+        grid.style.gap = '8px';
+        grid.innerHTML = `
+          <div>
+            <span style="font-size: 9px; color: #71717a; display: block; margin-bottom: 2px;">OFFSET X</span>
+            <input type="number" class="sh-x" value="${shadow.x}" style="background-color: #09090b; border: 1px solid #27272a; padding: 2px 4px; border-radius: 4px; color: white; width: 100%; font-size: 11px;">
+          </div>
+          <div>
+            <span style="font-size: 9px; color: #71717a; display: block; margin-bottom: 2px;">OFFSET Y</span>
+            <input type="number" class="sh-y" value="${shadow.y}" style="background-color: #09090b; border: 1px solid #27272a; padding: 2px 4px; border-radius: 4px; color: white; width: 100%; font-size: 11px;">
+          </div>
+        `;
+        const xInput = grid.querySelector('.sh-x');
+        const yInput = grid.querySelector('.sh-y');
+
+        const onOffsetChange = () => {
+          shadow.x = parseInt(xInput.value) || 0;
+          shadow.y = parseInt(yInput.value) || 0;
+          isUnsaved = true;
+          updateSaveButtonState();
+          renderCanvas();
+        };
+        xInput.addEventListener('input', onOffsetChange);
+        yInput.addEventListener('input', onOffsetChange);
+        row.appendChild(grid);
+
+        // Color and Blur row
+        const colorBlurRow = document.createElement('div');
+        colorBlurRow.style.display = 'grid';
+        colorBlurRow.style.gridTemplateColumns = '1fr 1.5fr';
+        colorBlurRow.style.gap = '8px';
+        colorBlurRow.style.alignItems = 'center';
+        colorBlurRow.innerHTML = `
+          <div>
+            <span style="font-size: 9px; color: #71717a; display: block; margin-bottom: 2px;">COLOR</span>
+            <input type="color" class="sh-color" value="${shadow.color || '#000000'}" style="height: 24px; padding: 0; width: 100%; border: none; background: transparent; cursor: pointer;">
+          </div>
+          <div>
+            <span style="font-size: 9px; color: #71717a; display: block; margin-bottom: 2px;">BLUR (0-30px)</span>
+            <div style="display: flex; align-items: center; gap: 4px;">
+              <input type="range" class="sh-blur" min="0" max="30" value="${shadow.blur}" style="flex-grow: 1;">
+              <span style="font-size: 10px; color: #3b82f6; font-family: monospace; min-width: 24px; text-align: right;">${shadow.blur}px</span>
+            </div>
+          </div>
+        `;
+        const colorInput = colorBlurRow.querySelector('.sh-color');
+        const blurInput = colorBlurRow.querySelector('.sh-blur');
+        const blurValSpan = colorBlurRow.querySelector('span:last-child');
+
+        colorInput.addEventListener('input', () => {
+          shadow.color = colorInput.value;
+          isUnsaved = true;
+          updateSaveButtonState();
+          renderCanvas();
+        });
+
+        blurInput.addEventListener('input', () => {
+          shadow.blur = parseInt(blurInput.value);
+          blurValSpan.textContent = `${shadow.blur}px`;
+          isUnsaved = true;
+          updateSaveButtonState();
+          renderCanvas();
+        });
+        row.appendChild(colorBlurRow);
+
+        // Opacity slider row
+        const opRow = document.createElement('div');
+        opRow.innerHTML = `
+          <span style="font-size: 9px; color: #71717a; display: block; margin-bottom: 2px;">OPACITY (0-100%)</span>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <input type="range" class="sh-opacity" min="0" max="100" value="${Math.round((shadow.opacity !== undefined ? shadow.opacity : 1) * 100)}" style="flex-grow: 1;">
+            <span style="font-size: 10px; color: #3b82f6; font-family: monospace; min-width: 28px; text-align: right;">${Math.round((shadow.opacity !== undefined ? shadow.opacity : 1) * 100)}%</span>
+          </div>
+        `;
+        const opInput = opRow.querySelector('.sh-opacity');
+        const opValSpan = opRow.querySelector('span:last-child');
+
+        opInput.addEventListener('input', () => {
+          shadow.opacity = parseFloat(opInput.value) / 100;
+          opValSpan.textContent = `${opInput.value}%`;
+          isUnsaved = true;
+          updateSaveButtonState();
+          renderCanvas();
+        });
+        row.appendChild(opRow);
+
+        container.appendChild(row);
+      });
+    }
 
     // Load available pages on boot
     async function loadPagesList(selectedPath = null) {
@@ -1458,9 +1733,16 @@
       // Set bg style on the entire workspace viewport, keeping the dot grid on top
       const currentBg = compileBackgroundStyleString();
       const workspaceEl = document.getElementById('workspace');
-      const dotGrid = 'radial-gradient(rgba(255, 255, 255, 0.12) 1.2px, transparent 1.2px)';
-      workspaceEl.style.background = `${dotGrid}, ${currentBg}`;
-      workspaceEl.style.backgroundSize = '24px 24px, auto';
+      const toggleDots = document.getElementById('toggleDots');
+      const enableDots = toggleDots ? toggleDots.checked : true;
+      if (enableDots) {
+        const dotGrid = 'radial-gradient(rgba(255, 255, 255, 0.12) 1.2px, transparent 1.2px)';
+        workspaceEl.style.background = `${dotGrid}, ${currentBg}`;
+        workspaceEl.style.backgroundSize = '24px 24px, auto';
+      } else {
+        workspaceEl.style.background = currentBg;
+        workspaceEl.style.backgroundSize = 'auto';
+      }
 
       // Keep canvas container itself transparent
       canvas.style.background = 'transparent';
@@ -1530,72 +1812,122 @@
           div.style.transform = '';
         }
         
+        // Create inner content wrapper to insulate layout handles from CSS effects
+        const contentWrapper = document.createElement('div');
+        contentWrapper.className = 'element-content-wrapper';
+        contentWrapper.style.width = '100%';
+        contentWrapper.style.height = el.type === 'text' ? 'auto' : '100%';
+        contentWrapper.style.boxSizing = 'border-box';
+        contentWrapper.style.position = 'relative';
+
         if (el.blendMode) {
-          div.style.mixBlendMode = el.blendMode;
+          contentWrapper.style.mixBlendMode = el.blendMode;
         }
 
-        // Apply universal border styles
+        // Apply universal border styles to content wrapper
         if (el.borderWidth) {
-          div.style.borderWidth = `${el.borderWidth}px`;
-          div.style.borderStyle = el.borderStyle || 'solid';
-          div.style.borderColor = el.borderColor || '#ffffff';
+          contentWrapper.style.borderWidth = `${el.borderWidth}px`;
+          contentWrapper.style.borderStyle = el.borderStyle || 'solid';
+          contentWrapper.style.borderColor = el.borderColor || '#ffffff';
         } else {
-          div.style.borderWidth = '';
-          div.style.borderStyle = '';
-          div.style.borderColor = '';
+          contentWrapper.style.borderWidth = '';
+          contentWrapper.style.borderStyle = '';
+          contentWrapper.style.borderColor = '';
         }
         if (el.elementBorderRadius) {
-          div.style.borderRadius = `${el.elementBorderRadius}px`;
-          div.style.overflow = 'hidden';
+          contentWrapper.style.borderRadius = `${el.elementBorderRadius}px`;
+          contentWrapper.style.overflow = 'hidden';
         } else {
-          div.style.borderRadius = '';
-          div.style.overflow = '';
+          contentWrapper.style.borderRadius = '';
+          contentWrapper.style.overflow = '';
         }
 
-        // Apply universal shadow styles
-        if (el.shadowEnable) {
-          const x = el.shadowX !== undefined ? el.shadowX : 4;
-          const y = el.shadowY !== undefined ? el.shadowY : 4;
-          const blur = el.shadowBlur !== undefined ? el.shadowBlur : 8;
-          const color = el.shadowColor || '#000000';
-          div.style.filter = `drop-shadow(${x}px ${y}px ${blur}px ${color})`;
+        if (el.opacity !== undefined && el.opacity !== null) {
+          contentWrapper.style.opacity = el.opacity / 100;
         } else {
-          div.style.filter = '';
+          contentWrapper.style.opacity = '';
+        }
+
+        // Apply universal shadow styles to content wrapper
+        if (el.shadowEnable) {
+          if (el.shadows && el.shadows.length > 0) {
+            const shadowFilters = el.shadows.map(s => {
+              const x = s.x !== undefined ? s.x : 4;
+              const y = s.y !== undefined ? s.y : 4;
+              const blur = s.blur !== undefined ? s.blur : 8;
+              const color = s.color || '#000000';
+              const opacity = s.opacity !== undefined ? s.opacity : 1;
+              const rgbaColor = hexToRgba(color, opacity);
+              return `drop-shadow(${x}px ${y}px ${blur}px ${rgbaColor})`;
+            }).join(' ');
+            contentWrapper.style.filter = shadowFilters;
+          } else {
+            const x = el.shadowX !== undefined ? el.shadowX : 4;
+            const y = el.shadowY !== undefined ? el.shadowY : 4;
+            const blur = el.shadowBlur !== undefined ? el.shadowBlur : 8;
+            const color = el.shadowColor || '#000000';
+            contentWrapper.style.filter = `drop-shadow(${x}px ${y}px ${blur}px ${color})`;
+          }
+        } else {
+          contentWrapper.style.filter = '';
         }
 
         if (el.type === 'text') {
-          div.style.fontSize = `${(el.fontSize || 4) * (canvasWidth / 100)}px`;
-          div.style.fontFamily = `'${el.fontFamily || 'Inter'}', sans-serif`;
-          div.style.textAlign = el.textAlign || 'left';
-          div.style.fontWeight = el.fontWeight || '400';
+          contentWrapper.style.fontSize = `${(el.fontSize || 4) * (canvasWidth / 100)}px`;
+          contentWrapper.style.fontFamily = `'${el.fontFamily || 'Inter'}', sans-serif`;
+          contentWrapper.style.textAlign = el.textAlign || 'left';
+          contentWrapper.style.fontWeight = el.fontWeight || '400';
           
           // Apply tracking and leading
           if (el.tracking !== undefined && el.tracking !== '') {
-            div.style.letterSpacing = `${el.tracking}px`;
+            contentWrapper.style.letterSpacing = `${el.tracking}px`;
           } else {
-            div.style.letterSpacing = '';
+            contentWrapper.style.letterSpacing = '';
           }
           if (el.leading !== undefined && el.leading !== '') {
-            div.style.lineHeight = el.leading;
+            contentWrapper.style.lineHeight = el.leading;
           } else {
-            div.style.lineHeight = '';
+            contentWrapper.style.lineHeight = '';
           }
           
           if (el.fillType === 'gradient') {
             const start = el.gradientColorStart || '#ff007f';
             const end = el.gradientColorEnd || '#7f00ff';
             const angle = el.gradientAngle || 45;
-            div.style.background = `linear-gradient(${angle}deg, ${start}, ${end})`;
-            div.style.webkitBackgroundClip = 'text';
-            div.style.webkitTextFillColor = 'transparent';
-            div.style.color = 'transparent';
+            contentWrapper.style.background = `linear-gradient(${angle}deg, ${start}, ${end})`;
+            contentWrapper.style.webkitBackgroundClip = 'text';
+            contentWrapper.style.webkitTextFillColor = 'transparent';
+            contentWrapper.style.color = 'transparent';
           } else {
-            div.style.background = '';
-            div.style.webkitBackgroundClip = '';
-            div.style.webkitTextFillColor = '';
-            div.style.color = el.color || '#ffffff';
+            contentWrapper.style.background = '';
+            contentWrapper.style.webkitBackgroundClip = '';
+            contentWrapper.style.webkitTextFillColor = '';
+            contentWrapper.style.color = el.color || '#ffffff';
           }
-          div.textContent = el.text || '';
+
+          // Apply text padding
+          if (el.paddingTop !== undefined) {
+            contentWrapper.style.paddingTop = `${el.paddingTop * (canvasWidth / 100)}px`;
+          } else {
+            contentWrapper.style.paddingTop = '';
+          }
+          if (el.paddingRight !== undefined) {
+            contentWrapper.style.paddingRight = `${el.paddingRight * (canvasWidth / 100)}px`;
+          } else {
+            contentWrapper.style.paddingRight = '';
+          }
+          if (el.paddingBottom !== undefined) {
+            contentWrapper.style.paddingBottom = `${el.paddingBottom * (canvasWidth / 100)}px`;
+          } else {
+            contentWrapper.style.paddingBottom = '';
+          }
+          if (el.paddingLeft !== undefined) {
+            contentWrapper.style.paddingLeft = `${el.paddingLeft * (canvasWidth / 100)}px`;
+          } else {
+            contentWrapper.style.paddingLeft = '';
+          }
+
+          contentWrapper.textContent = el.text || '';
 
         } else if (el.type === 'image') {
           const img = document.createElement('img');
@@ -1605,7 +1937,7 @@
           if (el.aspectRatio) {
             div.style.aspectRatio = el.aspectRatio;
           }
-          div.appendChild(img);
+          contentWrapper.appendChild(img);
 
         } else if (el.type === 'shape') {
           // Live SVG Rendering inside the editor element
@@ -1631,6 +1963,37 @@
                 </linearGradient>
               </defs>`;
             fillAttr = `url(#editor-shape-grad-${idx})`;
+          } else if (el.fillType === 'image') {
+            const imgUrl = el.bgImage || '';
+            const imgMode = el.bgImageMode || 'cover';
+            let preserveRatio = 'none';
+            let patternUnits = 'objectBoundingBox';
+
+            if (imgMode === 'cover') {
+              preserveRatio = 'xMidYMid slice';
+            } else if (imgMode === 'contain') {
+              preserveRatio = 'xMidYMid meet';
+            } else if (imgMode === 'tile') {
+              patternUnits = 'userSpaceOnUse';
+              preserveRatio = 'none';
+            }
+
+            if (patternUnits === 'userSpaceOnUse') {
+              gradientDef = `
+                <defs>
+                  <pattern id="editor-shape-img-${idx}" width="40" height="40" patternUnits="userSpaceOnUse">
+                    <image href="${imgUrl}" x="0" y="0" width="40" height="40" preserveAspectRatio="${preserveRatio}" />
+                  </pattern>
+                </defs>`;
+            } else {
+              gradientDef = `
+                <defs>
+                  <pattern id="editor-shape-img-${idx}" width="1" height="1" patternContentUnits="objectBoundingBox">
+                    <image href="${imgUrl}" x="0" y="0" width="1" height="1" preserveAspectRatio="${preserveRatio}" />
+                  </pattern>
+                </defs>`;
+            }
+            fillAttr = `url(#editor-shape-img-${idx})`;
           }
 
           const strokeAttr = el.strokeColor || 'none';
@@ -1654,12 +2017,15 @@
             shapeSvgElement = `<path d="${pathData}" fill="${fillAttr}" stroke="${strokeAttr}" stroke-width="${strokeWidthAttr}" stroke-linecap="round" stroke-linejoin="round" />`;
           }
 
-          div.innerHTML = `
+          contentWrapper.innerHTML = `
             <svg viewBox="0 0 100 100" width="100%" height="100%" preserveAspectRatio="none">${gradientDef}
               ${shapeSvgElement}
             </svg>
           `;
         }
+
+        // Append the content wrapper to the parent div
+        div.appendChild(contentWrapper);
 
         // Attach drag events
         setupDragEvents(div, idx);
@@ -1672,11 +2038,11 @@
 
         // On blur, exit text editing & save
         if (el.type === 'text') {
-          div.addEventListener('blur', () => {
-            if (div.contentEditable === 'true') {
-              div.contentEditable = 'false';
+          contentWrapper.addEventListener('blur', () => {
+            if (contentWrapper.contentEditable === 'true') {
+              contentWrapper.contentEditable = 'false';
               // Use innerText to preserve newline formatting correctly
-              elements[idx].text = div.innerText;
+              elements[idx].text = contentWrapper.innerText;
               isUnsaved = true;
               updateSaveButtonState();
               updatePropertiesPanel();
@@ -1685,9 +2051,9 @@
           });
           
           // Enter finishes inline text editing, shift+enter allows newlines
-          div.addEventListener('keydown', (e) => {
+          contentWrapper.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
-              div.blur();
+              contentWrapper.blur();
               e.preventDefault();
             }
           });
@@ -1718,7 +2084,8 @@
     function setupDragEvents(elementDiv, idx) {
       elementDiv.addEventListener('mousedown', (e) => {
         if (e.button !== 0) return;
-        if (elementDiv.contentEditable === 'true') return;
+        const contentWrapper = elementDiv.querySelector('.element-content-wrapper');
+        if (contentWrapper && contentWrapper.contentEditable === 'true') return;
         
         // Custom Double Click Detection (essential for mobile/canvas DOM elements re-created dynamically)
         const now = Date.now();
@@ -1888,6 +2255,11 @@
         shapeHeightProp.style.display = 'none';
       }
 
+      // Sync Opacity
+      const currentOpacity = el.opacity !== undefined ? el.opacity : 100;
+      propOpacity.value = currentOpacity;
+      propOpacityVal.textContent = `${currentOpacity}%`;
+
       // Sync advanced transforms
       propRotate.value = el.rotate || 0;
       propRotateVal.textContent = `${el.rotate || 0}°`;
@@ -1905,12 +2277,20 @@
       if (el.fillType === 'gradient') {
         propSolidGroup.style.display = 'none';
         propGradientGroup.style.display = 'block';
+        propImageGroup.style.display = 'none';
         propGradAngle.value = el.gradientAngle || 45;
         propGradStart.value = el.gradientColorStart || '#ff007f';
         propGradEnd.value = el.gradientColorEnd || '#7f00ff';
+      } else if (el.fillType === 'image') {
+        propSolidGroup.style.display = 'none';
+        propGradientGroup.style.display = 'none';
+        propImageGroup.style.display = 'block';
+        propBgImageInput.value = el.bgImage || '';
+        propBgImageMode.value = el.bgImageMode || 'cover';
       } else {
         propSolidGroup.style.display = 'block';
         propGradientGroup.style.display = 'none';
+        propImageGroup.style.display = 'none';
         propColor.value = el.color || el.fillColor || '#ffffff';
         propColorText.value = el.color || el.fillColor || '#ffffff';
       }
@@ -1932,15 +2312,10 @@
       propShadowEnable.checked = !!el.shadowEnable;
       if (el.shadowEnable) {
         shadowControlsGroup.style.display = 'block';
+        renderShadowStackList();
       } else {
         shadowControlsGroup.style.display = 'none';
       }
-      propShadowColor.value = el.shadowColor || '#000000';
-      const sBlur = el.shadowBlur !== undefined ? el.shadowBlur : 8;
-      propShadowBlur.value = sBlur;
-      propShadowBlurVal.textContent = `${sBlur}px`;
-      propShadowX.value = el.shadowX !== undefined ? el.shadowX : 4;
-      propShadowY.value = el.shadowY !== undefined ? el.shadowY : 4;
 
       // Type-specific inputs
       if (el.type === 'text') {
@@ -1959,6 +2334,36 @@
         const leadVal = el.leading !== undefined ? el.leading : 1.2;
         propLeading.value = leadVal;
         propLeadingVal.textContent = `${leadVal}`;
+
+        // Sync Padding
+        const isLinked = el.linkPadding !== undefined ? el.linkPadding : true;
+        propLinkPadding.checked = isLinked;
+        
+        if (isLinked) {
+          propLinkedPaddingGroup.style.display = 'block';
+          propIndividualPaddingGroup.style.display = 'none';
+          
+          const padVal = el.paddingTop !== undefined ? el.paddingTop : 0;
+          propPaddingAll.value = padVal;
+          propPaddingAllVal.textContent = padVal;
+        } else {
+          propLinkedPaddingGroup.style.display = 'none';
+          propIndividualPaddingGroup.style.display = 'flex';
+          
+          const pTop = el.paddingTop !== undefined ? el.paddingTop : 0;
+          const pRight = el.paddingRight !== undefined ? el.paddingRight : 0;
+          const pBottom = el.paddingBottom !== undefined ? el.paddingBottom : 0;
+          const pLeft = el.paddingLeft !== undefined ? el.paddingLeft : 0;
+          
+          propPaddingTop.value = pTop;
+          propPaddingTopVal.textContent = pTop;
+          propPaddingRight.value = pRight;
+          propPaddingRightVal.textContent = pRight;
+          propPaddingBottom.value = pBottom;
+          propPaddingBottomVal.textContent = pBottom;
+          propPaddingLeft.value = pLeft;
+          propPaddingLeftVal.textContent = pLeft;
+        }
 
         // Reset alignment highlights
         [alignLeft, alignCenter, alignRight, alignJustify].forEach(btn => btn.style.borderColor = '');
@@ -2385,49 +2790,96 @@
         const enabled = propShadowEnable.checked;
         elements[activeElementIndex].shadowEnable = enabled;
         shadowControlsGroup.style.display = enabled ? 'block' : 'none';
+        if (enabled) {
+          renderShadowStackList();
+        }
         isUnsaved = true;
         updateSaveButtonState();
         renderCanvas();
       }
     });
 
-    propShadowColor.addEventListener('input', () => {
+    const addShadowBtn = document.getElementById('addShadowBtn');
+    addShadowBtn.addEventListener('click', () => {
       if (activeElementIndex !== null) {
-        elements[activeElementIndex].shadowColor = propShadowColor.value;
+        const el = elements[activeElementIndex];
+        if (!el.shadows) el.shadows = [];
+        el.shadows.push({ x: 4, y: 4, blur: 8, color: '#000000', opacity: 0.5 });
+        isUnsaved = true;
+        updateSaveButtonState();
+        renderCanvas();
+        renderShadowStackList();
+      }
+    });
+
+    propOpacity.addEventListener('input', () => {
+      if (activeElementIndex !== null) {
+        const val = parseInt(propOpacity.value);
+        elements[activeElementIndex].opacity = val;
+        propOpacityVal.textContent = `${val}%`;
         isUnsaved = true;
         updateSaveButtonState();
         renderCanvas();
       }
     });
 
-    propShadowBlur.addEventListener('input', () => {
+    propBgImageInput.addEventListener('input', () => {
       if (activeElementIndex !== null) {
-        const val = parseInt(propShadowBlur.value) || 0;
-        elements[activeElementIndex].shadowBlur = val;
-        propShadowBlurVal.textContent = `${val}px`;
+        elements[activeElementIndex].bgImage = propBgImageInput.value.trim();
         isUnsaved = true;
         updateSaveButtonState();
         renderCanvas();
       }
     });
 
-    propShadowX.addEventListener('input', () => {
+    propBgImageMode.addEventListener('change', () => {
       if (activeElementIndex !== null) {
-        elements[activeElementIndex].shadowX = parseInt(propShadowX.value) || 0;
+        elements[activeElementIndex].bgImageMode = propBgImageMode.value;
         isUnsaved = true;
         updateSaveButtonState();
         renderCanvas();
       }
     });
 
-    propShadowY.addEventListener('input', () => {
-      if (activeElementIndex !== null) {
-        elements[activeElementIndex].shadowY = parseInt(propShadowY.value) || 0;
-        isUnsaved = true;
-        updateSaveButtonState();
-        renderCanvas();
-      }
+    propBgImageUploadBtn.addEventListener('click', () => {
+      const tempUploader = document.createElement('input');
+      tempUploader.type = 'file';
+      tempUploader.accept = 'image/*';
+      tempUploader.addEventListener('change', async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const formData = new FormData();
+        formData.append('file', file);
+
+        try {
+          const res = await fetch(`/api/upload?page=${encodeURIComponent(activePage)}`, {
+            method: 'POST',
+            body: formData
+          });
+          const data = await res.json();
+          
+          if (data.filename && activeElementIndex !== null) {
+            elements[activeElementIndex].bgImage = data.filename;
+            propBgImageInput.value = data.filename;
+            isUnsaved = true;
+            updateSaveButtonState();
+            renderCanvas();
+          }
+        } catch (err) {
+          console.error('Background image upload failed', err);
+          alert('Upload failed!');
+        }
+      });
+      tempUploader.click();
     });
+
+    const toggleDots = document.getElementById('toggleDots');
+    if (toggleDots) {
+      toggleDots.addEventListener('change', () => {
+        renderCanvas();
+      });
+    }
 
     // Letter-spacing (Tracking) & Line-height (Leading) Event Listeners
     propTracking.addEventListener('input', () => {
@@ -2446,6 +2898,92 @@
         const val = parseFloat(propLeading.value) || 1.2;
         elements[activeElementIndex].leading = val;
         propLeadingVal.textContent = `${val}`;
+        isUnsaved = true;
+        updateSaveButtonState();
+        renderCanvas();
+      }
+    });
+
+    // Padding Event Listeners
+    propLinkPadding.addEventListener('change', () => {
+      if (activeElementIndex !== null && elements[activeElementIndex].type === 'text') {
+        const linked = propLinkPadding.checked;
+        elements[activeElementIndex].linkPadding = linked;
+        
+        if (linked) {
+          // If we link, set everything to Top value or current All value
+          const currentAll = elements[activeElementIndex].paddingTop || 0;
+          elements[activeElementIndex].paddingTop = currentAll;
+          elements[activeElementIndex].paddingRight = currentAll;
+          elements[activeElementIndex].paddingBottom = currentAll;
+          elements[activeElementIndex].paddingLeft = currentAll;
+        }
+        
+        isUnsaved = true;
+        updateSaveButtonState();
+        updatePropertiesPanel(); // Re-render panel views
+        renderCanvas();
+      }
+    });
+
+    propPaddingAll.addEventListener('input', () => {
+      if (activeElementIndex !== null && elements[activeElementIndex].type === 'text') {
+        const val = parseFloat(propPaddingAll.value) || 0;
+        elements[activeElementIndex].paddingTop = val;
+        elements[activeElementIndex].paddingRight = val;
+        elements[activeElementIndex].paddingBottom = val;
+        elements[activeElementIndex].paddingLeft = val;
+        
+        propPaddingAllVal.textContent = val;
+        
+        isUnsaved = true;
+        updateSaveButtonState();
+        renderCanvas();
+      }
+    });
+
+    propPaddingTop.addEventListener('input', () => {
+      if (activeElementIndex !== null && elements[activeElementIndex].type === 'text') {
+        const val = parseFloat(propPaddingTop.value) || 0;
+        elements[activeElementIndex].paddingTop = val;
+        propPaddingTopVal.textContent = val;
+        
+        isUnsaved = true;
+        updateSaveButtonState();
+        renderCanvas();
+      }
+    });
+
+    propPaddingRight.addEventListener('input', () => {
+      if (activeElementIndex !== null && elements[activeElementIndex].type === 'text') {
+        const val = parseFloat(propPaddingRight.value) || 0;
+        elements[activeElementIndex].paddingRight = val;
+        propPaddingRightVal.textContent = val;
+        
+        isUnsaved = true;
+        updateSaveButtonState();
+        renderCanvas();
+      }
+    });
+
+    propPaddingBottom.addEventListener('input', () => {
+      if (activeElementIndex !== null && elements[activeElementIndex].type === 'text') {
+        const val = parseFloat(propPaddingBottom.value) || 0;
+        elements[activeElementIndex].paddingBottom = val;
+        propPaddingBottomVal.textContent = val;
+        
+        isUnsaved = true;
+        updateSaveButtonState();
+        renderCanvas();
+      }
+    });
+
+    propPaddingLeft.addEventListener('input', () => {
+      if (activeElementIndex !== null && elements[activeElementIndex].type === 'text') {
+        const val = parseFloat(propPaddingLeft.value) || 0;
+        elements[activeElementIndex].paddingLeft = val;
+        propPaddingLeftVal.textContent = val;
+        
         isUnsaved = true;
         updateSaveButtonState();
         renderCanvas();
@@ -2765,6 +3303,43 @@
       }
     }
 
+    function duplicateSelectedElements() {
+      let targets = [];
+      if (selectedIndices.length > 0) {
+        targets = [...selectedIndices].sort((a, b) => a - b);
+      } else if (activeElementIndex !== null) {
+        targets = [activeElementIndex];
+      }
+      
+      if (targets.length === 0) return;
+
+      const newIndices = [];
+      
+      targets.forEach(idx => {
+        const original = elements[idx];
+        if (!original) return;
+        
+        // Deep copy the original element
+        const clone = JSON.parse(JSON.stringify(original));
+        
+        // Offset slightly
+        clone.x = parseFloat((clone.x + 4).toFixed(2));
+        clone.y = parseFloat((clone.y + 4).toFixed(2));
+        
+        elements.push(clone);
+        newIndices.push(elements.length - 1);
+      });
+
+      // Select the newly duplicated elements
+      selectedIndices = newIndices;
+      activeElementIndex = newIndices[newIndices.length - 1];
+
+      isUnsaved = true;
+      updateSaveButtonState();
+      renderCanvas();
+      updatePropertiesPanel();
+    }
+
     // Save changes button action
     saveBtn.addEventListener('click', () => {
       savePageState(true);
@@ -2891,6 +3466,7 @@
     document.getElementById('menu-stretch-wider').addEventListener('click', () => { adjustWidth(10); hideFloatingUI(); });
     document.getElementById('menu-stretch-narrower').addEventListener('click', () => { adjustWidth(-10); hideFloatingUI(); });
     document.getElementById('menu-delete').addEventListener('click', () => { deleteActiveElement(); hideFloatingUI(); });
+    document.getElementById('menu-duplicate').addEventListener('click', () => { duplicateSelectedElements(); hideFloatingUI(); });
     document.getElementById('menu-edit-floating').addEventListener('click', (e) => {
       if (activeElementIndex !== null) {
         showFloatingInspector(activeElementIndex, e.clientX, e.clientY);
@@ -2911,12 +3487,36 @@
       hideFloatingUI();
     });
 
+    document.getElementById('menu-bring-front').addEventListener('click', () => {
+      if (activeElementIndex !== null && activeElementIndex < elements.length - 1) {
+        const activeItem = elements.splice(activeElementIndex, 1)[0];
+        elements.push(activeItem);
+        selectElement(elements.length - 1);
+        isUnsaved = true;
+        updateSaveButtonState();
+        renderCanvas();
+      }
+      hideFloatingUI();
+    });
+
     document.getElementById('menu-send-backward').addEventListener('click', () => {
       if (activeElementIndex !== null && activeElementIndex > 0) {
         const temp = elements[activeElementIndex];
         elements[activeElementIndex] = elements[activeElementIndex - 1];
         elements[activeElementIndex - 1] = temp;
         selectElement(activeElementIndex - 1);
+        isUnsaved = true;
+        updateSaveButtonState();
+        renderCanvas();
+      }
+      hideFloatingUI();
+    });
+
+    document.getElementById('menu-send-back').addEventListener('click', () => {
+      if (activeElementIndex !== null && activeElementIndex > 0) {
+        const activeItem = elements.splice(activeElementIndex, 1)[0];
+        elements.unshift(activeItem);
+        selectElement(0);
         isUnsaved = true;
         updateSaveButtonState();
         renderCanvas();
@@ -3093,7 +3693,7 @@
       window.addEventListener('mouseup', onMouseUp);
     }
 
-    // KEYBOARD SHORTCUTS FOR DELETION
+    // KEYBOARD SHORTCUTS FOR DELETION & DUPLICATION
     document.addEventListener('keydown', (e) => {
       if (document.activeElement && (
           document.activeElement.tagName === 'INPUT' || 
@@ -3106,6 +3706,11 @@
       if (e.key === 'Delete' || e.key === 'Backspace') {
         e.preventDefault();
         deleteActiveElement();
+      }
+      
+      if ((e.ctrlKey || e.metaKey) && e.key === 'd') {
+        e.preventDefault();
+        duplicateSelectedElements();
       }
     });
 
