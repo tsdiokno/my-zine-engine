@@ -740,12 +740,11 @@
               </div>
             </div>
             <div>
-              <label class="form-label">KERNING (Pairing)</label>
-              <select id="propKerning" style="background-color: #18181b; border: 1px solid #27272a; padding: 4px; border-radius: 4px; color: white; font-size: 11px; width: 100%;">
-                <option value="auto">Auto</option>
-                <option value="normal">Normal</option>
-                <option value="none">None</option>
-              </select>
+              <label class="form-label">LEADING (Line Height)</label>
+              <div class="slider-row">
+                <input type="range" id="propLeading" min="0.5" max="3" step="0.05" value="1.2" style="width: 100%;">
+                <span class="slider-val" id="propLeadingVal" style="font-size: 10px; min-width: 24px;">1.2</span>
+              </div>
             </div>
           </div>
 
@@ -1095,6 +1094,39 @@
     let activeElementIndex = null;
     let selectedIndices = []; // Multi-selection indices tracker
     let isUnsaved = false;
+    let lastClickTime = 0;
+    let lastClickIdx = null;
+
+    // Helper to start inline contenteditable editing on a text element
+    function startInlineEditing(idx) {
+      const el = elements[idx];
+      if (!el || el.type !== 'text') return;
+      
+      const div = canvas.querySelector(`.editor-element[data-index="${idx}"]`);
+      if (!div) return;
+      
+      div.contentEditable = 'true';
+      div.focus();
+      
+      // Place cursor at the end of the text
+      const range = document.createRange();
+      const sel = window.getSelection();
+      range.selectNodeContents(div);
+      range.collapse(false);
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+
+    // Handles logical double click on any zine element
+    function triggerDoubleClickAction(idx, clientX, clientY) {
+      const el = elements[idx];
+      if (!el) return;
+      if (el.type === 'text') {
+        startInlineEditing(idx);
+      } else {
+        showFloatingInspector(idx, clientX, clientY);
+      }
+    }
 
     // DOM Elements
     const pageSelect = document.getElementById('pageSelect');
@@ -1179,10 +1211,11 @@
     const saveFeedback = document.getElementById('saveFeedback');
     const canvasHeightInfo = document.getElementById('canvas-height-info');
     
-    // Tracking & Kerning
+    // Tracking & Leading
     const propTracking = document.getElementById('propTracking');
     const propTrackingVal = document.getElementById('propTrackingVal');
-    const propKerning = document.getElementById('propKerning');
+    const propLeading = document.getElementById('propLeading');
+    const propLeadingVal = document.getElementById('propLeadingVal');
 
     // Borders & Element Radius
     const propBorderWidth = document.getElementById('propBorderWidth');
@@ -1536,16 +1569,16 @@
           div.style.textAlign = el.textAlign || 'left';
           div.style.fontWeight = el.fontWeight || '400';
           
-          // Apply tracking and kerning
+          // Apply tracking and leading
           if (el.tracking !== undefined && el.tracking !== '') {
             div.style.letterSpacing = `${el.tracking}px`;
           } else {
             div.style.letterSpacing = '';
           }
-          if (el.kerning) {
-            div.style.fontKerning = el.kerning;
+          if (el.leading !== undefined && el.leading !== '') {
+            div.style.lineHeight = el.leading;
           } else {
-            div.style.fontKerning = '';
+            div.style.lineHeight = '';
           }
           
           if (el.fillType === 'gradient') {
@@ -1634,20 +1667,7 @@
         // Double click launches inline contenteditable text edit or floating inspector popup
         div.addEventListener('dblclick', (e) => {
           e.stopPropagation();
-          if (el.type === 'text') {
-            div.contentEditable = 'true';
-            div.focus();
-            
-            // Place cursor at the end of the text
-            const range = document.createRange();
-            const sel = window.getSelection();
-            range.selectNodeContents(div);
-            range.collapse(false);
-            sel.removeAllRanges();
-            sel.addRange(range);
-          } else {
-            showFloatingInspector(idx, e.clientX, e.clientY);
-          }
+          triggerDoubleClickAction(idx, e.clientX, e.clientY);
         });
 
         // On blur, exit text editing & save
@@ -1700,6 +1720,19 @@
         if (e.button !== 0) return;
         if (elementDiv.contentEditable === 'true') return;
         
+        // Custom Double Click Detection (essential for mobile/canvas DOM elements re-created dynamically)
+        const now = Date.now();
+        if (idx === lastClickIdx && (now - lastClickTime) < 300) {
+          e.preventDefault();
+          e.stopPropagation();
+          triggerDoubleClickAction(idx, e.clientX, e.clientY);
+          lastClickTime = 0;
+          lastClickIdx = null;
+          return;
+        }
+        lastClickTime = now;
+        lastClickIdx = idx;
+
         e.preventDefault();
         e.stopPropagation();
         
@@ -1919,11 +1952,13 @@
         propFont.value = el.fontFamily || 'Inter';
         propText.value = el.text || '';
 
-        // Sync tracking & kerning
+        // Sync tracking & leading
         const trackVal = el.tracking !== undefined ? el.tracking : 0;
         propTracking.value = trackVal;
         propTrackingVal.textContent = `${trackVal}px`;
-        propKerning.value = el.kerning || 'auto';
+        const leadVal = el.leading !== undefined ? el.leading : 1.2;
+        propLeading.value = leadVal;
+        propLeadingVal.textContent = `${leadVal}`;
 
         // Reset alignment highlights
         [alignLeft, alignCenter, alignRight, alignJustify].forEach(btn => btn.style.borderColor = '');
@@ -2394,7 +2429,7 @@
       }
     });
 
-    // Letter-spacing (Tracking) & Font-kerning Event Listeners
+    // Letter-spacing (Tracking) & Line-height (Leading) Event Listeners
     propTracking.addEventListener('input', () => {
       if (activeElementIndex !== null && elements[activeElementIndex].type === 'text') {
         const val = parseFloat(propTracking.value) || 0;
@@ -2406,9 +2441,11 @@
       }
     });
 
-    propKerning.addEventListener('change', () => {
+    propLeading.addEventListener('input', () => {
       if (activeElementIndex !== null && elements[activeElementIndex].type === 'text') {
-        elements[activeElementIndex].kerning = propKerning.value;
+        const val = parseFloat(propLeading.value) || 1.2;
+        elements[activeElementIndex].leading = val;
+        propLeadingVal.textContent = `${val}`;
         isUnsaved = true;
         updateSaveButtonState();
         renderCanvas();

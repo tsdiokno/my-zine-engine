@@ -109,6 +109,22 @@ function compileHtml(elements = [], googleFonts = [], backgroundColor = '#111111
     .map(font => `<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=${encodeURIComponent(font)}:wght@400;700;800;900&display=swap">`)
     .join('\n  ');
 
+  // Calculate the maximum height required based on the lowermost absolute element
+  let maxElementY = 100;
+  (elements || []).forEach(el => {
+    if (!el) return;
+    let estHeight = 30;
+    if (el.type === 'text') {
+      estHeight = (el.fontSize || 4) * 3;
+    } else if (el.type === 'shape') {
+      estHeight = el.h || el.w || 30;
+    }
+    const bottomY = parseFloat(el.y) + estHeight;
+    if (bottomY > maxElementY) {
+      maxElementY = bottomY;
+    }
+  });
+
   const elementsHtml = (elements || []).filter(Boolean).map((el, idx) => {
     const styleParts = [
       `position: absolute`,
@@ -159,14 +175,11 @@ function compileHtml(elements = [], googleFonts = [], backgroundColor = '#111111
       styleParts.push(`text-align: ${el.textAlign || 'left'}`);
       styleParts.push(`font-weight: ${el.fontWeight || '400'}`);
       styleParts.push(`white-space: pre-wrap`);
-      styleParts.push(`line-height: 1.2`);
+      styleParts.push(`line-height: ${el.leading !== undefined && el.leading !== '' ? el.leading : 1.2}`);
 
-      // Letter-spacing and font-kerning
+      // Letter-spacing (Tracking)
       if (el.tracking !== undefined && el.tracking !== '') {
         styleParts.push(`letter-spacing: ${el.tracking}px`);
-      }
-      if (el.kerning) {
-        styleParts.push(`font-kerning: ${el.kerning}`);
       }
 
       // Text gradients or solids
@@ -295,14 +308,15 @@ function compileHtml(elements = [], googleFonts = [], backgroundColor = '#111111
       align-items: flex-start;
       font-family: 'Inter', system-ui, sans-serif;
       overflow-x: hidden;
+      overflow-y: auto;
     }
     .zine-scroll {
       width: calc(100 * var(--w-unit));
+      height: calc(${maxElementY} * var(--w-unit));
       min-height: 100vh;
       position: relative;
       background: transparent;
-      overflow-y: auto;
-      overflow-x: hidden;
+      overflow: visible;
       padding-bottom: calc(10 * var(--w-unit));
     }
     .zine-element {
@@ -485,7 +499,7 @@ app.post('/api/save-page', (req, res) => {
         shadowX: el.shadowX !== undefined ? Number(el.shadowX) : undefined,
         shadowY: el.shadowY !== undefined ? Number(el.shadowY) : undefined,
         tracking: el.tracking !== undefined ? String(el.tracking) : undefined,
-        kerning: el.kerning,
+        leading: el.leading !== undefined ? Number(el.leading) : undefined,
         aspectRatio: el.aspectRatio
       };
     });
