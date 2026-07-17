@@ -1,0 +1,48 @@
+name: Release Packager
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-package:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Run Build Process
+        run: npm run build
+
+      - name: Stage Release Package
+        run: |
+          mkdir -p Zine-Engine-Release
+          # Move Vite dist folder and rename it to core-editor
+          mv dist Zine-Engine-Release/core-editor
+          # Create empty zine-dist/ folder for storing user publications
+          mkdir -p Zine-Engine-Release/zine-dist
+          # Copy the native, zero-dependency run.js server to the root
+          cp server/run.js Zine-Engine-Release/run.js
+
+      - name: Create Zip Archive
+        run: |
+          zip -r Zine-Engine-Release.zip Zine-Engine-Release
+
+      - name: Upload Release Asset
+        uses: softprops/action-gh-release@v2
+        with:
+          files: Zine-Engine-Release.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

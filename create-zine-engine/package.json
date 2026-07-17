@@ -1,0 +1,22 @@
+{
+  "name": "create-zine-engine",
+  "version": "1.0.0",
+  "description": "Zero-dependency bootstrap installer for the local-first Zine Engine publishing tool.",
+  "main": "index.js",
+  "bin": {
+    "create-zine-engine": "index.js"
+  },
+  "keywords": [
+    "zine",
+    "zine-engine",
+    "digital-publishing",
+    "creative-writing",
+    "local-first",
+    "offline"
+  ],
+  "author": "tsdiokno@gmail.com",
+  "license": "MIT",
+  "engines": {
+    "node": ">=16.0.0"
+  }
+}

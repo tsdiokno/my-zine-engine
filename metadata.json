@@ -1,0 +1,6 @@
+{
+  "name": "Digital Zine Publisher",
+  "description": "A mobile-first, infinite-scroll digital zine publisher with a visual drag-and-drop spatial editor.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
