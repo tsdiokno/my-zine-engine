@@ -6,7 +6,7 @@ We live in a screen-based world, but the modern web has traded creative freedom 
 
 Here is the "why" behind how it works:
 
-## CORE PRINCIPLES
+## 🏛️ CORE PRINCIPLES
 
 1. **Scrapbooking Over Systems:** Creation should be immediate. There are no databases, CMS, or deployment scripts. Just drag, drop, layer, and save.
 2. **The Conceded Canvas:** We accept the mobile screen as our baseline medium, but we refuse to let algorithms break the art apart to fit other devices. Your layout acts as a fixed poster that simply scales up proportionally on a desktop, preserving your exact spatial intent.
