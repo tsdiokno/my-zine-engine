@@ -54,12 +54,12 @@
     #workspace {
       flex-grow: 1;
       height: 100vh;
-      background-color: #202024;
+      background-color: #121214;
       overflow: auto;
       display: flex;
       justify-content: center;
-      align-items: flex-start;
-      padding: 40px;
+      align-items: stretch;
+      padding: 0;
       position: relative;
       transition: background 0.25s ease;
     }
@@ -199,48 +199,51 @@
     /* The Zine Canvas mimicking standard phone view */
     #canvas-container {
       position: relative;
-      padding: 0 40px;
       display: flex;
       flex-direction: column;
       align-items: center;
+      width: 100%;
+      min-height: 100%;
     }
     #canvas {
-      width: 375px; /* standard mobile view */
+      width: 390px; /* Aligned exactly with mobile viewport width coefficient */
       min-height: 667px;
       background-color: transparent !important;
       position: relative;
-      border-left: 1.5px dashed rgba(255, 255, 255, 0.25);
-      border-right: 1.5px dashed rgba(255, 255, 255, 0.25);
-      border-top: none;
-      border-bottom: none;
-      box-shadow: none;
+      border: none;
       border-radius: 0;
+      padding: 0 !important;
       overflow: visible;
-      transition: border-color 0.2s ease;
+      margin-top: 0;
+      margin-bottom: 0;
     }
-    #canvas:hover {
-      border-left-color: rgba(59, 130, 246, 0.5);
-      border-right-color: rgba(59, 130, 246, 0.5);
-    }
-    
-    /* Ruler / boundary overlay indicators - placed over canvas with no margin impact */
-    #canvas::before {
-      content: 'MOBILE WORKSPACE BOUNDS (375PX)';
+
+    /* Mobile boundary guide overlay - anchored to highest level canvas container */
+    .mobile-viewport-guide {
       position: absolute;
-      top: 12px;
+      top: 0;
+      bottom: 0;
       left: 50%;
       transform: translateX(-50%);
+      width: 390px;
+      border-left: 1px dashed rgba(255, 255, 255, 0.25);
+      border-right: 1px dashed rgba(255, 255, 255, 0.25);
+      pointer-events: none;
+      z-index: 5;
+    }
+    .canvas-size-label {
+      position: absolute;
+      top: 120px;
+      left: calc(100% + 6px);
       font-family: "JetBrains Mono", monospace;
-      font-size: 9px;
-      color: rgba(255, 255, 255, 0.25);
-      letter-spacing: 1.5px;
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.25); /* exact same color as guideline border */
       white-space: nowrap;
       pointer-events: none;
       z-index: 100;
-      transition: color 0.2s ease;
-    }
-    #canvas:hover::before {
-      color: rgba(59, 130, 246, 0.6);
+      transform: rotate(90deg);
+      transform-origin: left top;
+      letter-spacing: 0.05em;
     }
 
     /* Interior elements in the editor */
@@ -336,7 +339,6 @@
       width: 100%;
       height: 100%;
       pointer-events: none;
-      border: 1px solid rgba(59, 130, 246, 0.05);
     }
 
     /* Floating Context Menu */
@@ -508,6 +510,15 @@
       50% { transform: scale(1.1); opacity: 1; }
       100% { transform: scale(0.95); opacity: 0.5; }
     }
+
+    .rotate-handle {
+      transition: transform 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease;
+    }
+    .rotate-handle:hover {
+      transform: scale(1.4) !important;
+      background-color: #3b82f6 !important;
+      box-shadow: 0 0 8px rgba(59, 130, 246, 0.8);
+    }
   </style>
   <div id="fonts-injection"></div>
 </head>
@@ -535,10 +546,26 @@
       <label class="form-label" for="pageSelect">ACTIVE PAGE</label>
       <select id="pageSelect"></select>
     </div>
-    <button class="btn btn-full" id="addPageBtn" style="margin-bottom: 16px;">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-      + New Page / Subpage
-    </button>
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px;">
+      <button class="btn" id="addPageBtn" style="width: 100%; font-size: 11px; padding: 8px 4px;">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+        + New Page
+      </button>
+      <button class="btn" id="duplicatePageBtn" style="width: 100%; font-size: 11px; padding: 8px 4px;">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+        Duplicate Page
+      </button>
+    </div>
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 16px;">
+      <button class="btn" id="undoBtn" title="Undo (Ctrl+Z)" disabled style="width: 100%; font-size: 11px; padding: 8px 4px; opacity: 0.5; pointer-events: none;">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/></svg>
+        Undo
+      </button>
+      <button class="btn" id="redoBtn" title="Redo (Ctrl+Y)" disabled style="width: 100%; font-size: 11px; padding: 8px 4px; opacity: 0.5; pointer-events: none;">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 7v6h-6"/><path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3l3 2.7"/></svg>
+        Redo
+      </button>
+    </div>
 
     <!-- Global Canvas Specs -->
     <div class="section-title">Global Canvas Settings</div>
@@ -547,6 +574,7 @@
       <select id="bgFillType" style="margin-bottom: 8px;">
         <option value="solid">Solid Color</option>
         <option value="gradient">Linear Gradient</option>
+        <option value="radial-gradient">Radial Gradient</option>
         <option value="image">Image Background</option>
       </select>
       
@@ -560,8 +588,10 @@
 
       <!-- Gradient background fields -->
       <div id="bgGradientGroup" style="display: none;">
-        <label class="form-label">GRADIENT ANGLE (deg)</label>
-        <input type="range" id="bgGradAngle" min="0" max="360" value="45" style="margin-bottom: 8px;">
+        <div id="bgGradAngleWrapper">
+          <label class="form-label">GRADIENT ANGLE (deg)</label>
+          <input type="range" id="bgGradAngle" min="0" max="360" value="45" style="margin-bottom: 8px;">
+        </div>
         <div class="input-row">
           <input type="color" id="bgGradStart" style="height: 36px; padding: 2px; cursor: pointer;" value="#111111">
           <input type="color" id="bgGradEnd" style="height: 36px; padding: 2px; cursor: pointer;" value="#222225">
@@ -708,6 +738,7 @@
           <select id="propFillType" style="margin-bottom: 8px;">
             <option value="solid">Solid Color Fill</option>
             <option value="gradient">Linear Gradient Fill</option>
+            <option value="radial-gradient">Radial Gradient Fill</option>
             <option value="image">Image Background Fill</option>
           </select>
 
@@ -722,8 +753,10 @@
 
           <!-- Gradient Group -->
           <div id="propGradientGroup" style="display: none;">
-            <label class="form-label">GRADIENT ANGLE (deg)</label>
-            <input type="range" id="propGradAngle" min="0" max="360" value="45" style="margin-bottom: 8px;">
+            <div id="propGradAngleWrapper">
+              <label class="form-label">GRADIENT ANGLE (deg)</label>
+              <input type="range" id="propGradAngle" min="0" max="360" value="45" style="margin-bottom: 8px;">
+            </div>
             <div class="input-row">
               <input type="color" id="propGradStart" style="height: 36px; padding: 2px; cursor: pointer;">
               <input type="color" id="propGradEnd" style="height: 36px; padding: 2px; cursor: pointer;">
@@ -1053,10 +1086,12 @@
   <!-- RIGHT SPATIAL WORKSPACE -->
   <main id="workspace">
     <div id="canvas-container">
+      <div class="mobile-viewport-guide">
+        <div class="canvas-size-label" id="canvas-height-info">Canvas size: 375 x 667px (Aspect-locked scale)</div>
+      </div>
       <div id="canvas">
         <div class="canvas-margin-guides"></div>
         <!-- Rendered elements go here -->
-        <div class="coords-indicator" id="canvas-height-info">Smartphone canvas (375px wide)</div>
       </div>
     </div>
   </main>
@@ -1108,8 +1143,6 @@
       Send to Back (Bottom)
     </div>
     <div class="menu-divider"></div>
-    <div class="menu-item" id="menu-rotate-ccw">Rotate -15°</div>
-    <div class="menu-item" id="menu-rotate-cw">Rotate +15°</div>
     <div class="menu-item" id="menu-stretch-wider">Stretch Wider (+10%)</div>
     <div class="menu-item" id="menu-stretch-narrower">Shrink Narrower (-10%)</div>
     <div class="menu-divider"></div>
@@ -1171,6 +1204,7 @@
           <select id="floatFillType">
             <option value="solid">Solid Color</option>
             <option value="gradient">Linear Gradient</option>
+            <option value="radial-gradient">Radial Gradient</option>
           </select>
         </div>
         <!-- Solid Color Field -->
@@ -1184,8 +1218,10 @@
         <!-- Gradient Fields -->
         <div id="floatGradientGroup" style="display:none;">
           <div class="form-group">
-            <label class="form-label">Gradient Angle & Colors</label>
-            <input type="range" id="floatGradAngle" min="0" max="360" step="1" style="margin-bottom:8px;">
+            <div id="floatGradAngleWrapper">
+              <label class="form-label">Gradient Angle & Colors</label>
+              <input type="range" id="floatGradAngle" min="0" max="360" step="1" style="margin-bottom:8px;">
+            </div>
             <div class="input-row">
               <input type="color" id="floatGradStart" style="height:34px; padding:2px;">
               <input type="color" id="floatGradEnd" style="height:34px; padding:2px;">
@@ -1234,7 +1270,7 @@
 
   <!-- Editor Logic -->
   <script>
-    const canvasWidth = 375; // Locked mobile resolution width coefficient
+    const canvasWidth = 390; // Standard 390px mobile viewport width coefficient
 
     // Editor state
     let activePage = '/';
@@ -1246,6 +1282,155 @@
     let isUnsaved = false;
     let lastClickTime = 0;
     let lastClickIdx = null;
+
+    // Undo / Redo Stacks
+    let undoStack = [];
+    let redoStack = [];
+    const MAX_UNDO_DEPTH = 50;
+
+    function saveUndoState() {
+      // Deep copy elements to avoid reference sharing
+      const elementsCopy = JSON.parse(JSON.stringify(elements));
+      const bgCopy = backgroundColor;
+      
+      // Push onto undoStack
+      undoStack.push({
+        elements: elementsCopy,
+        backgroundColor: bgCopy,
+        activeElementIndex: activeElementIndex,
+        selectedIndices: [...selectedIndices]
+      });
+      
+      // Limit stack depth
+      if (undoStack.length > MAX_UNDO_DEPTH) {
+        undoStack.shift();
+      }
+      
+      // Clear redoStack on any new action
+      redoStack = [];
+      updateUndoRedoButtons();
+    }
+
+    function undo() {
+      if (undoStack.length === 0) return;
+      
+      // Save current state to redoStack before restoring
+      const currentElementsCopy = JSON.parse(JSON.stringify(elements));
+      const currentBgCopy = backgroundColor;
+      redoStack.push({
+        elements: currentElementsCopy,
+        backgroundColor: currentBgCopy,
+        activeElementIndex: activeElementIndex,
+        selectedIndices: [...selectedIndices]
+      });
+      
+      // Pop from undoStack
+      const prevState = undoStack.pop();
+      elements = prevState.elements;
+      backgroundColor = prevState.backgroundColor;
+      activeElementIndex = prevState.activeElementIndex;
+      selectedIndices = prevState.selectedIndices || (prevState.activeElementIndex !== null ? [prevState.activeElementIndex] : []);
+      
+      // Restore BG input values
+      restoreBgInputs();
+      
+      isUnsaved = true;
+      updateSaveButtonState();
+      renderCanvas();
+      updatePropertiesPanel();
+      updateUndoRedoButtons();
+    }
+
+    function redo() {
+      if (redoStack.length === 0) return;
+      
+      // Save current state to undoStack before restoring
+      const currentElementsCopy = JSON.parse(JSON.stringify(elements));
+      const currentBgCopy = backgroundColor;
+      undoStack.push({
+        elements: currentElementsCopy,
+        backgroundColor: currentBgCopy,
+        activeElementIndex: activeElementIndex,
+        selectedIndices: [...selectedIndices]
+      });
+      
+      // Pop from redoStack
+      const nextState = redoStack.pop();
+      elements = nextState.elements;
+      backgroundColor = nextState.backgroundColor;
+      activeElementIndex = nextState.activeElementIndex;
+      selectedIndices = nextState.selectedIndices || (nextState.activeElementIndex !== null ? [nextState.activeElementIndex] : []);
+      
+      // Restore BG input values
+      restoreBgInputs();
+      
+      isUnsaved = true;
+      updateSaveButtonState();
+      renderCanvas();
+      updatePropertiesPanel();
+      updateUndoRedoButtons();
+    }
+
+    function updateUndoRedoButtons() {
+      const undoBtn = document.getElementById('undoBtn');
+      const redoBtn = document.getElementById('redoBtn');
+      if (undoBtn) {
+        undoBtn.disabled = undoStack.length === 0;
+        undoBtn.style.opacity = undoStack.length === 0 ? '0.5' : '1';
+        undoBtn.style.pointerEvents = undoStack.length === 0 ? 'none' : 'auto';
+      }
+      if (redoBtn) {
+        redoBtn.disabled = redoStack.length === 0;
+        redoBtn.style.opacity = redoStack.length === 0 ? '0.5' : '1';
+        redoBtn.style.pointerEvents = redoStack.length === 0 ? 'none' : 'auto';
+      }
+    }
+
+    function restoreBgInputs() {
+      const bgFillType = document.getElementById('bgFillType');
+      const bgSolidGroup = document.getElementById('bgSolidGroup');
+      const bgGradientGroup = document.getElementById('bgGradientGroup');
+      const bgColor = document.getElementById('bgColor');
+      const bgColorText = document.getElementById('bgColorText');
+      const bgGradAngle = document.getElementById('bgGradAngle');
+      const bgGradStart = document.getElementById('bgGradStart');
+      const bgGradEnd = document.getElementById('bgGradEnd');
+
+      if (!bgFillType) return;
+
+      if (backgroundColor.includes('linear-gradient')) {
+        bgFillType.value = 'gradient';
+        if (bgSolidGroup) bgSolidGroup.style.display = 'none';
+        if (bgGradientGroup) bgGradientGroup.style.display = 'block';
+        const bgGradAngleWrapper = document.getElementById('bgGradAngleWrapper');
+        if (bgGradAngleWrapper) bgGradAngleWrapper.style.display = 'block';
+        const regex = /linear-gradient\((\d+)deg,\s*(#[0-9a-fA-F]{3,6}),\s*(#[0-9a-fA-F]{3,6})\)/;
+        const match = backgroundColor.match(regex);
+        if (match) {
+          if (bgGradAngle) bgGradAngle.value = match[1];
+          if (bgGradStart) bgGradStart.value = match[2];
+          if (bgGradEnd) bgGradEnd.value = match[3];
+        }
+      } else if (backgroundColor.includes('radial-gradient')) {
+        bgFillType.value = 'radial-gradient';
+        if (bgSolidGroup) bgSolidGroup.style.display = 'none';
+        if (bgGradientGroup) bgGradientGroup.style.display = 'block';
+        const bgGradAngleWrapper = document.getElementById('bgGradAngleWrapper');
+        if (bgGradAngleWrapper) bgGradAngleWrapper.style.display = 'none';
+        const regex = /radial-gradient\(circle,\s*(#[0-9a-fA-F]{3,6}),\s*(#[0-9a-fA-F]{3,6})\)/;
+        const match = backgroundColor.match(regex);
+        if (match) {
+          if (bgGradStart) bgGradStart.value = match[1];
+          if (bgGradEnd) bgGradEnd.value = match[2];
+        }
+      } else {
+        bgFillType.value = 'solid';
+        if (bgSolidGroup) bgSolidGroup.style.display = 'block';
+        if (bgGradientGroup) bgGradientGroup.style.display = 'none';
+        if (bgColor) bgColor.value = backgroundColor;
+        if (bgColorText) bgColorText.value = backgroundColor;
+      }
+    }
 
     // Helper to start inline contenteditable editing on a text element
     function startInlineEditing(idx) {
@@ -1284,6 +1469,7 @@
     // DOM Elements
     const pageSelect = document.getElementById('pageSelect');
     const addPageBtn = document.getElementById('addPageBtn');
+    const duplicatePageBtn = document.getElementById('duplicatePageBtn');
     
     // Background Fill controls
     const bgFillType = document.getElementById('bgFillType');
@@ -1464,6 +1650,36 @@
     const propBgImageMode = document.getElementById('propBgImageMode');
     const propBgImageUploadBtn = document.getElementById('propBgImageUploadBtn');
     const propImageGroup = document.getElementById('propImageGroup');
+
+    // Setup focus and change hooks on properties panel & background panel inputs
+    // to record undo snapshots BEFORE values are changed
+    document.addEventListener('DOMContentLoaded', () => {
+      const inputsToWatch = [
+        propX, propY, propW, propH, propText, propFont, propS,
+        propRotate, propRotateX, propRotateY, propSkewX, propSkewY,
+        propFillType, propColor, propColorText, propGradAngle, propGradStart, propGradEnd,
+        propShapeType, propBorderRadius, propStrokeColor, propStrokeWidth, propCustomSvgPath,
+        propTracking, propLeading, propOpacity, propBgImageInput, propBgImageMode,
+        propBorderWidth, propBorderStyle, propBorderColor, propElementBorderRadius,
+        propShadowEnable, propShadowColor, propShadowBlur, propShadowX, propShadowY,
+        propCustomId, propHyperlinkType, propLinkPageSearch, propLinkPageSelect,
+        propLinkAnchorSelect, propLinkAnchorInput, propLinkExternalInput, propLinkTarget,
+        floatX, floatY, floatW, floatH, floatText, floatFillType, floatColorPicker, floatColorText,
+        floatGradAngle, floatGradStart, floatGradEnd, floatBlend, floatRotate, floatRotateX,
+        floatRotateY, floatSkewX, floatSkewY,
+        bgFillType, bgColor, bgColorText, bgGradAngle, bgGradStart, bgGradEnd
+      ];
+      inputsToWatch.forEach(input => {
+        if (input) {
+          input.addEventListener('focus', () => {
+            saveUndoState();
+          });
+          input.addEventListener('change', () => {
+            saveUndoState();
+          });
+        }
+      });
+    });
 
     function hexToRgba(hex, alpha) {
       hex = hex.replace('#', '');
@@ -1665,10 +1881,12 @@
         activePage = pagePath;
 
         // Load background specs
-        if (backgroundColor.includes('gradient')) {
+        if (backgroundColor.includes('linear-gradient')) {
           bgFillType.value = 'gradient';
           bgSolidGroup.style.display = 'none';
           bgGradientGroup.style.display = 'block';
+          const bgGradAngleWrapper = document.getElementById('bgGradAngleWrapper');
+          if (bgGradAngleWrapper) bgGradAngleWrapper.style.display = 'block';
           // Try parse: linear-gradient(45deg, #111111, #222225)
           const regex = /linear-gradient\((\d+)deg,\s*(#[0-9a-fA-F]{3,6}),\s*(#[0-9a-fA-F]{3,6})\)/;
           const match = backgroundColor.match(regex);
@@ -1676,6 +1894,19 @@
             bgGradAngle.value = match[1];
             bgGradStart.value = match[2];
             bgGradEnd.value = match[3];
+          }
+        } else if (backgroundColor.includes('radial-gradient')) {
+          bgFillType.value = 'radial-gradient';
+          bgSolidGroup.style.display = 'none';
+          bgGradientGroup.style.display = 'block';
+          const bgGradAngleWrapper = document.getElementById('bgGradAngleWrapper');
+          if (bgGradAngleWrapper) bgGradAngleWrapper.style.display = 'none';
+          // Try parse: radial-gradient(circle, #111111, #222225)
+          const regex = /radial-gradient\(circle,\s*(#[0-9a-fA-F]{3,6}),\s*(#[0-9a-fA-F]{3,6})\)/;
+          const match = backgroundColor.match(regex);
+          if (match) {
+            bgGradStart.value = match[1];
+            bgGradEnd.value = match[2];
           }
         } else {
           bgFillType.value = 'solid';
@@ -1719,6 +1950,8 @@
     function compileBackgroundStyleString() {
       if (bgFillType.value === 'gradient') {
         return `linear-gradient(${bgGradAngle.value}deg, ${bgGradStart.value}, ${bgGradEnd.value})`;
+      } else if (bgFillType.value === 'radial-gradient') {
+        return `radial-gradient(circle, ${bgGradStart.value}, ${bgGradEnd.value})`;
       }
       return bgColor.value;
     }
@@ -1800,11 +2033,12 @@
       // Clean canvas except guides
       const guides = canvas.querySelector('.canvas-margin-guides');
       canvas.innerHTML = '';
-      canvas.appendChild(guides);
+      if (guides) canvas.appendChild(guides);
 
-      // Set bg style on the entire workspace viewport, keeping the dot grid on top
+      // Set bg style directly on the entire workspace viewport, keeping the dot grid on top
       const currentBg = compileBackgroundStyleString();
       const workspaceEl = document.getElementById('workspace');
+
       const toggleDots = document.getElementById('toggleDots');
       const enableDots = toggleDots ? toggleDots.checked : true;
       if (enableDots) {
@@ -1816,7 +2050,7 @@
         workspaceEl.style.backgroundSize = 'auto';
       }
 
-      // Keep canvas container itself transparent
+      // Keep canvas background transparent
       canvas.style.background = 'transparent';
       canvas.style.backgroundColor = 'transparent';
 
@@ -1891,8 +2125,10 @@
         blendWrapper.style.height = el.type === 'text' ? 'auto' : '100%';
         blendWrapper.style.position = 'relative';
         if (el.blendMode && el.blendMode !== 'normal') {
+          div.style.mixBlendMode = el.blendMode;
           blendWrapper.style.mixBlendMode = el.blendMode;
         } else {
+          div.style.mixBlendMode = 'normal';
           blendWrapper.style.mixBlendMode = 'normal';
         }
 
@@ -1978,6 +2214,13 @@
             contentWrapper.style.webkitBackgroundClip = 'text';
             contentWrapper.style.webkitTextFillColor = 'transparent';
             contentWrapper.style.color = 'transparent';
+          } else if (el.fillType === 'radial-gradient') {
+            const start = el.gradientColorStart || '#ff007f';
+            const end = el.gradientColorEnd || '#7f00ff';
+            contentWrapper.style.background = `radial-gradient(circle, ${start}, ${end})`;
+            contentWrapper.style.webkitBackgroundClip = 'text';
+            contentWrapper.style.webkitTextFillColor = 'transparent';
+            contentWrapper.style.color = 'transparent';
           } else {
             contentWrapper.style.background = '';
             contentWrapper.style.webkitBackgroundClip = '';
@@ -2043,6 +2286,18 @@
                 </linearGradient>
               </defs>`;
             fillAttr = `url(#editor-shape-grad-${idx})`;
+          } else if (el.fillType === 'radial-gradient') {
+            const start = el.gradientColorStart || '#ff007f';
+            const end = el.gradientColorEnd || '#7f00ff';
+
+            gradientDef = `
+              <defs>
+                <radialGradient id="editor-shape-radgrad-${idx}" cx="50%" cy="50%" r="50%" fx="50%" fy="50%">
+                  <stop offset="0%" stop-color="${start}" />
+                  <stop offset="100%" stop-color="${end}" />
+                </radialGradient>
+              </defs>`;
+            fillAttr = `url(#editor-shape-radgrad-${idx})`;
           } else if (el.fillType === 'image') {
             const imgUrl = el.bgImage || '';
             const imgMode = el.bgImageMode || 'cover';
@@ -2220,7 +2475,13 @@
         const startMouseY = e.clientY;
         let totalDragDist = 0;
         
+        let hasSavedUndo = false;
         function onMouseMove(moveEvt) {
+          if (!hasSavedUndo) {
+            saveUndoState();
+            hasSavedUndo = true;
+          }
+
           const dx = moveEvt.clientX - startMouseX;
           const dy = moveEvt.clientY - startMouseY;
           totalDragDist = Math.sqrt(dx * dx + dy * dy);
@@ -2235,9 +2496,9 @@
             let nextX = pos.x + dxUnits;
             let nextY = pos.y + dyUnits;
             
-            // Constrain within a reasonable workspace bound
-            nextX = Math.max(-50, Math.min(100, nextX));
-            nextY = Math.max(0, nextY);
+            // Constrain within a broad, comfortable workspace bound
+            nextX = Math.max(-100, Math.min(200, nextX));
+            nextY = Math.max(-200, Math.min(500, nextY));
             
             elements[pos.index].x = parseFloat(nextX.toFixed(2));
             elements[pos.index].y = parseFloat(nextY.toFixed(2));
@@ -2358,8 +2619,18 @@
       if (el.fillType === 'gradient') {
         propSolidGroup.style.display = 'none';
         propGradientGroup.style.display = 'block';
+        const propGradAngleWrapper = document.getElementById('propGradAngleWrapper');
+        if (propGradAngleWrapper) propGradAngleWrapper.style.display = 'block';
         propImageGroup.style.display = 'none';
         propGradAngle.value = el.gradientAngle || 45;
+        propGradStart.value = el.gradientColorStart || '#ff007f';
+        propGradEnd.value = el.gradientColorEnd || '#7f00ff';
+      } else if (el.fillType === 'radial-gradient') {
+        propSolidGroup.style.display = 'none';
+        propGradientGroup.style.display = 'block';
+        const propGradAngleWrapper = document.getElementById('propGradAngleWrapper');
+        if (propGradAngleWrapper) propGradAngleWrapper.style.display = 'none';
+        propImageGroup.style.display = 'none';
         propGradStart.value = el.gradientColorStart || '#ff007f';
         propGradEnd.value = el.gradientColorEnd || '#7f00ff';
       } else if (el.fillType === 'image') {
@@ -2571,7 +2842,16 @@
       if (el.fillType === 'gradient') {
         floatSolidGroup.style.display = 'none';
         floatGradientGroup.style.display = 'block';
+        const floatGradAngleWrapper = document.getElementById('floatGradAngleWrapper');
+        if (floatGradAngleWrapper) floatGradAngleWrapper.style.display = 'block';
         floatGradAngle.value = el.gradientAngle || 45;
+        floatGradStart.value = el.gradientColorStart || '#ff007f';
+        floatGradEnd.value = el.gradientColorEnd || '#7f00ff';
+      } else if (el.fillType === 'radial-gradient') {
+        floatSolidGroup.style.display = 'none';
+        floatGradientGroup.style.display = 'block';
+        const floatGradAngleWrapper = document.getElementById('floatGradAngleWrapper');
+        if (floatGradAngleWrapper) floatGradAngleWrapper.style.display = 'none';
         floatGradStart.value = el.gradientColorStart || '#ff007f';
         floatGradEnd.value = el.gradientColorEnd || '#7f00ff';
       } else {
@@ -2610,12 +2890,25 @@
         el.gradientAngle = parseInt(floatGradAngle.value);
         el.gradientColorStart = floatGradStart.value;
         el.gradientColorEnd = floatGradEnd.value;
+        floatSolidGroup.style.display = 'none';
+        floatGradientGroup.style.display = 'block';
+        const floatGradAngleWrapper = document.getElementById('floatGradAngleWrapper');
+        if (floatGradAngleWrapper) floatGradAngleWrapper.style.display = 'block';
+      } else if (el.fillType === 'radial-gradient') {
+        el.gradientColorStart = floatGradStart.value;
+        el.gradientColorEnd = floatGradEnd.value;
+        floatSolidGroup.style.display = 'none';
+        floatGradientGroup.style.display = 'block';
+        const floatGradAngleWrapper = document.getElementById('floatGradAngleWrapper');
+        if (floatGradAngleWrapper) floatGradAngleWrapper.style.display = 'none';
       } else {
         if (el.type === 'text') {
           el.color = floatColorPicker.value;
         } else {
           el.fillColor = floatColorPicker.value;
         }
+        floatSolidGroup.style.display = 'block';
+        floatGradientGroup.style.display = 'none';
       }
 
       el.blendMode = floatBlend.value;
@@ -2732,12 +3025,30 @@
         if (val === 'gradient') {
           propSolidGroup.style.display = 'none';
           propGradientGroup.style.display = 'block';
+          const propGradAngleWrapper = document.getElementById('propGradAngleWrapper');
+          if (propGradAngleWrapper) propGradAngleWrapper.style.display = 'block';
+          propImageGroup.style.display = 'none';
           elements[activeElementIndex].gradientAngle = parseInt(propGradAngle.value);
           elements[activeElementIndex].gradientColorStart = propGradStart.value;
           elements[activeElementIndex].gradientColorEnd = propGradEnd.value;
+        } else if (val === 'radial-gradient') {
+          propSolidGroup.style.display = 'none';
+          propGradientGroup.style.display = 'block';
+          const propGradAngleWrapper = document.getElementById('propGradAngleWrapper');
+          if (propGradAngleWrapper) propGradAngleWrapper.style.display = 'none';
+          propImageGroup.style.display = 'none';
+          elements[activeElementIndex].gradientColorStart = propGradStart.value;
+          elements[activeElementIndex].gradientColorEnd = propGradEnd.value;
+        } else if (val === 'image') {
+          propSolidGroup.style.display = 'none';
+          propGradientGroup.style.display = 'none';
+          propImageGroup.style.display = 'block';
+          elements[activeElementIndex].bgImage = propBgImageInput ? propBgImageInput.value : '';
+          elements[activeElementIndex].bgImageMode = propBgImageMode ? propBgImageMode.value : 'cover';
         } else {
           propSolidGroup.style.display = 'block';
           propGradientGroup.style.display = 'none';
+          propImageGroup.style.display = 'none';
           if (elements[activeElementIndex].type === 'text') {
             elements[activeElementIndex].color = propColor.value;
           } else {
@@ -2942,6 +3253,7 @@
 
     const addShadowBtn = document.getElementById('addShadowBtn');
     addShadowBtn.addEventListener('click', () => {
+      saveUndoState();
       if (activeElementIndex !== null) {
         const el = elements[activeElementIndex];
         if (!el.shadows) el.shadows = [];
@@ -3259,6 +3571,7 @@
     alignJustify.addEventListener('click', () => setAlign('justify'));
 
     function setAlign(mode) {
+      saveUndoState();
       if (activeElementIndex !== null && elements[activeElementIndex].type === 'text') {
         elements[activeElementIndex].textAlign = mode;
         isUnsaved = true;
@@ -3274,29 +3587,26 @@
       if (type === 'gradient') {
         bgSolidGroup.style.display = 'none';
         bgGradientGroup.style.display = 'block';
+        const bgGradAngleWrapper = document.getElementById('bgGradAngleWrapper');
+        if (bgGradAngleWrapper) bgGradAngleWrapper.style.display = 'block';
+      } else if (type === 'radial-gradient') {
+        bgSolidGroup.style.display = 'none';
+        bgGradientGroup.style.display = 'block';
+        const bgGradAngleWrapper = document.getElementById('bgGradAngleWrapper');
+        if (bgGradAngleWrapper) bgGradAngleWrapper.style.display = 'none';
       } else {
         bgSolidGroup.style.display = 'block';
         bgGradientGroup.style.display = 'none';
       }
       backgroundColor = compileBackgroundStyleString();
-      if (backgroundColor.includes('gradient')) {
-        canvas.style.background = backgroundColor;
-      } else {
-        canvas.style.background = '';
-        canvas.style.backgroundColor = backgroundColor;
-      }
+      renderCanvas();
       isUnsaved = true;
       updateSaveButtonState();
     });
 
     function triggerGlobalBgUpdate() {
       backgroundColor = compileBackgroundStyleString();
-      if (backgroundColor.includes('gradient')) {
-        canvas.style.background = backgroundColor;
-      } else {
-        canvas.style.background = '';
-        canvas.style.backgroundColor = backgroundColor;
-      }
+      renderCanvas();
       isUnsaved = true;
       updateSaveButtonState();
     }
@@ -3375,8 +3685,85 @@
       }
     });
 
+    // Duplicate Active Page
+    duplicatePageBtn.addEventListener('click', async () => {
+      let defaultNewPath = activePage;
+      if (defaultNewPath === '/') {
+        defaultNewPath = 'copy';
+      } else {
+        const cleanActive = defaultNewPath.replace(/^\//, '').replace(/\/$/, '');
+        const match = cleanActive.match(/(.+)\((\d+)\)$/);
+        if (match) {
+          const base = match[1];
+          const num = parseInt(match[2]) + 1;
+          defaultNewPath = `${base}(${num})`;
+        } else {
+          defaultNewPath = `${cleanActive}(2)`;
+        }
+      }
+
+      const input = prompt('Duplicate page as relative path:\n(You can edit this path structure)', defaultNewPath);
+      if (input === null) return;
+
+      let pathStr = input.trim();
+      pathStr = pathStr.replace(/^[\\/]+/, '').replace(/[\\/]+$/, '');
+      pathStr = pathStr.split('/').filter(p => p && p !== '..').join('/');
+
+      if (!pathStr) {
+        alert('Please provide a non-empty relative path!');
+        return;
+      }
+
+      const newPagePath = '/' + pathStr;
+
+      try {
+        saveFeedback.textContent = 'Duplicating page...';
+        saveFeedback.style.color = '#3b82f6';
+
+        const res = await fetch('/api/save-page', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            pagePath: newPagePath,
+            elements: elements,
+            googleFonts: googleFonts,
+            backgroundColor: backgroundColor
+          })
+        });
+
+        const data = await res.json();
+        if (data.success) {
+          saveFeedback.textContent = 'Page duplicated successfully!';
+          saveFeedback.style.color = '#10b981';
+          
+          activePage = newPagePath;
+          localStorage.setItem('zine-active-page', activePage);
+          
+          await loadPagesList(newPagePath);
+          await loadPageState(newPagePath);
+        } else {
+          saveFeedback.textContent = 'Failed to duplicate page';
+          saveFeedback.style.color = '#ef4444';
+          alert('Error: ' + data.error);
+        }
+      } catch (err) {
+        saveFeedback.textContent = 'Error duplicating page';
+        saveFeedback.style.color = '#ef4444';
+        console.error('Failed to duplicate page', err);
+      }
+    });
+
+    // Undo / Redo Click Handlers
+    document.getElementById('undoBtn').addEventListener('click', () => {
+      undo();
+    });
+    document.getElementById('redoBtn').addEventListener('click', () => {
+      redo();
+    });
+
     // Add Content block generators
     addTextBtn.addEventListener('click', () => {
+      saveUndoState();
       const newText = {
         type: 'text',
         x: 15,
@@ -3406,6 +3793,7 @@
 
     // Add Shapes generator
     addShapeBtn.addEventListener('click', () => {
+      saveUndoState();
       const newShape = {
         type: 'shape',
         shapeType: 'circle',
@@ -3476,6 +3864,7 @@
 
     // Add image helper
     function addNewImageElement(srcPath) {
+      saveUndoState();
       const newImg = {
         type: 'image',
         src: srcPath,
@@ -3520,6 +3909,7 @@
     deleteElementBtn.addEventListener('click', deleteActiveElement);
 
     function deleteActiveElement() {
+      saveUndoState();
       if (selectedIndices.length > 0) {
         const sortedIndices = [...selectedIndices].sort((a, b) => b - a);
         sortedIndices.forEach(idx => {
@@ -3544,6 +3934,7 @@
     }
 
     function duplicateSelectedElements() {
+      saveUndoState();
       let targets = [];
       if (selectedIndices.length > 0) {
         targets = [...selectedIndices].sort((a, b) => a - b);
@@ -3701,8 +4092,6 @@
     });
 
     // Context menu items listeners
-    document.getElementById('menu-rotate-ccw').addEventListener('click', () => { adjustRotation(-15); hideFloatingUI(); });
-    document.getElementById('menu-rotate-cw').addEventListener('click', () => { adjustRotation(15); hideFloatingUI(); });
     document.getElementById('menu-stretch-wider').addEventListener('click', () => { adjustWidth(10); hideFloatingUI(); });
     document.getElementById('menu-stretch-narrower').addEventListener('click', () => { adjustWidth(-10); hideFloatingUI(); });
     document.getElementById('menu-delete').addEventListener('click', () => { deleteActiveElement(); hideFloatingUI(); });
@@ -3776,6 +4165,7 @@
     }
 
     function adjustRotation(deg) {
+      saveUndoState();
       if (activeElementIndex !== null) {
         const current = elements[activeElementIndex].rotate || 0;
         let nextRot = (current + deg) % 360;
@@ -3789,6 +4179,7 @@
     }
 
     function adjustWidth(pct) {
+      saveUndoState();
       if (activeElementIndex !== null) {
         const current = elements[activeElementIndex].w || 50;
         elements[activeElementIndex].w = Math.max(5, Math.min(100, current + pct));
@@ -3840,9 +4231,84 @@
         
         parentDiv.appendChild(handle);
       });
+
+      // Add free rotation handle centered at the top of the selected element
+      const rotHandle = document.createElement('div');
+      rotHandle.className = 'rotate-handle';
+      rotHandle.style.position = 'absolute';
+      rotHandle.style.width = '12px';
+      rotHandle.style.height = '12px';
+      rotHandle.style.backgroundColor = '#10b981'; // green for rotation
+      rotHandle.style.border = '1.5px solid #ffffff';
+      rotHandle.style.borderRadius = '50%';
+      rotHandle.style.zIndex = '110';
+      rotHandle.style.top = '-24px';
+      rotHandle.style.left = 'calc(50% - 6px)';
+      
+      const customRotateCursor = 'url("data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'24\' height=\'24\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'%2310b981\' stroke-width=\'3\' stroke-linecap=\'round\' stroke-linejoin=\'round\'><path d=\'M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67\'/></svg>") 12 12, pointer';
+      rotHandle.style.cursor = customRotateCursor;
+      rotHandle.title = 'Drag to Rotate';
+
+      // Create a connecting line from the element's top edge to the handle
+      const rotLine = document.createElement('div');
+      rotLine.style.position = 'absolute';
+      rotLine.style.width = '1.5px';
+      rotLine.style.height = '18px';
+      rotLine.style.backgroundColor = '#10b981';
+      rotLine.style.top = '-18px';
+      rotLine.style.left = 'calc(50% - 0.75px)';
+      rotLine.style.pointerEvents = 'none';
+
+      parentDiv.appendChild(rotLine);
+      parentDiv.appendChild(rotHandle);
+
+      rotHandle.addEventListener('mousedown', (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        saveUndoState();
+        
+        rotHandle.style.cursor = 'grabbing';
+        
+        // Calculate element center once at drag start
+        const rect = parentDiv.getBoundingClientRect();
+        const centerX = rect.left + rect.width / 2;
+        const centerY = rect.top + rect.height / 2;
+
+        function onMouseMove(moveEvent) {
+          const dx = moveEvent.clientX - centerX;
+          const dy = moveEvent.clientY - centerY;
+          
+          let angleRad = Math.atan2(dy, dx);
+          let angleDeg = angleRad * (180 / Math.PI);
+          
+          // -90 degrees in math is pointing straight up. We want that to be 0 degrees.
+          let rotateDeg = Math.round(angleDeg + 90);
+          
+          // Normalize to [0, 360)
+          rotateDeg = (rotateDeg % 360 + 360) % 360;
+          
+          el.rotate = rotateDeg;
+          
+          isUnsaved = true;
+          updateSaveButtonState();
+          
+          renderCanvas();
+          updatePropertiesPanel();
+        }
+
+        function onMouseUp() {
+          rotHandle.style.cursor = customRotateCursor;
+          window.removeEventListener('mousemove', onMouseMove);
+          window.removeEventListener('mouseup', onMouseUp);
+        }
+
+        window.addEventListener('mousemove', onMouseMove);
+        window.addEventListener('mouseup', onMouseUp);
+      });
     }
 
     function startResizing(mouseDownEvent, pos, el, idx, parentDiv) {
+      saveUndoState();
       const startX = mouseDownEvent.clientX;
       const startY = mouseDownEvent.clientY;
       const startW = el.w || 50;
@@ -3899,16 +4365,16 @@
         }
         
         el.w = Math.round(newW * 10) / 10;
-        el.x = Math.max(0, Math.round(newX * 10) / 10);
+        el.x = Math.max(-100, Math.round(newX * 10) / 10);
         
         if (el.type === 'shape') {
           el.h = Math.round(newH * 10) / 10;
         }
         
         if (pos.includes('t')) {
-          el.y = Math.max(0, Math.round(newY * 10) / 10);
+          el.y = Math.max(-100, Math.round(newY * 10) / 10);
         } else if (pos.includes('b')) {
-          el.y = Math.max(0, Math.round(startYPos * 10) / 10);
+          el.y = Math.max(-100, Math.round(startYPos * 10) / 10);
         }
         
         // Scaling text font-size proportionally with width if Shift held
@@ -3952,14 +4418,24 @@
         e.preventDefault();
         duplicateSelectedElements();
       }
+      
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+        e.preventDefault();
+        undo();
+      }
+      
+      if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'y' || (e.shiftKey && e.key.toLowerCase() === 'z'))) {
+        e.preventDefault();
+        redo();
+      }
     });
 
     // CANVAS MARQUEE SELECTION LOGIC
     canvas.addEventListener('mousedown', (e) => {
       if (e.button !== 0) return;
       
-      // If clicking directly on an element or resize handles, setupDragEvents handles it
-      if (e.target.closest('.editor-element') || e.target.closest('.resize-handle')) {
+      // If clicking directly on an element, resize handles, or rotate handle, setupDragEvents handles it
+      if (e.target.closest('.editor-element') || e.target.closest('.resize-handle') || e.target.closest('.rotate-handle')) {
         return;
       }
       

@@ -264,6 +264,12 @@ function compileHtml(elements = [], googleFonts = [], backgroundColor = '#111111
         styleParts.push(`background: linear-gradient(${angle}deg, ${start}, ${end})`);
         styleParts.push(`-webkit-background-clip: text`);
         styleParts.push(`-webkit-text-fill-color: transparent`);
+      } else if (el.fillType === 'radial-gradient') {
+        const start = el.gradientColorStart || '#ff007f';
+        const end = el.gradientColorEnd || '#7f00ff';
+        styleParts.push(`background: radial-gradient(circle, ${start}, ${end})`);
+        styleParts.push(`-webkit-background-clip: text`);
+        styleParts.push(`-webkit-text-fill-color: transparent`);
       } else {
         styleParts.push(`color: ${el.color || '#ffffff'}`);
       }
@@ -301,6 +307,18 @@ function compileHtml(elements = [], googleFonts = [], backgroundColor = '#111111
         </linearGradient>
       </defs>`;
         fillAttr = `url(#shape-grad-${idx})`;
+      } else if (el.fillType === 'radial-gradient') {
+        const start = el.gradientColorStart || '#ff007f';
+        const end = el.gradientColorEnd || '#7f00ff';
+
+        gradientDef = `
+      <defs>
+        <radialGradient id="shape-radgrad-${idx}" cx="50%" cy="50%" r="50%" fx="50%" fy="50%">
+          <stop offset="0%" stop-color="${start}" />
+          <stop offset="100%" stop-color="${end}" />
+        </radialGradient>
+      </defs>`;
+        fillAttr = `url(#shape-radgrad-${idx})`;
       } else if (el.fillType === 'image') {
         const imgUrl = el.bgImage || '';
         const imgMode = el.bgImageMode || 'cover';
