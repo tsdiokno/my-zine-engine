@@ -1,6 +1,19 @@
 # 📼 Zine Engine
 
-A local-first, spatial vector-locked digital publishing playground designed for artists, zinesters, and creative writers. Build media-rich, responsive digital publications that scale beautifully to any screen width using an intuitive offline editor.
+We live in a screen-based world, but the modern web has traded creative freedom for algorithmic optimization and cloud dependency.
+
+**Zine Engine** exists to reclaim the browser as a site for tactile, autonomous art. We concede the hardware—the mobile device, the browser engine—but we reject the corporate ecosystem. It is an offline-first, drag-and-drop digital scrapbook that outputs 100% static, dependency-free HTML. You build it off the grid, and it lasts forever.
+
+Here is the "why" behind how it works:
+
+## 🏛️ CORE PRINCIPLES
+
+1. **Scrapbooking Over Systems:** Creation should be immediate. There are no databases, CMS, or deployment scripts. Just drag, drop, layer, and save.
+2. **The Conceded Canvas:** We accept the mobile screen as our baseline medium, but we refuse to let algorithms break the art apart to fit other devices. Your layout acts as a fixed poster that simply scales up proportionally on a desktop, preserving your exact spatial intent.
+3. **Vernacular Motion:** We prioritize web-native culture over slick production. There are no complex animation timelines—motion is achieved strictly through mindful layout and the raw inclusion of GIFs.
+4. **Architectural Autonomy:** You build the paths. There is no auto-generated navigation. Every page is a blank sheet you connect manually, aided by an engine that quietly maps your local files so you can link them effortlessly.
+5. **The Subversive Stack:** We use heavy modern frameworks to build the editor, but strip them away before it reaches your hands. The app you download requires zero dependencies, no cloud accounts, and no internet to run.
+6. **HTML as the Artifact:** Digital art shouldn't rot when servers die. The exported zine is purely static, acts as a lossless backup, and leaves no trace of tracking scripts or external libraries.
 
 ---
 
