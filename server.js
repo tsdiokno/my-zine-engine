@@ -420,7 +420,7 @@ function compileHtml(elements = [], googleFonts = [], backgroundColor = '#111111
         --w-unit: 3.9px; /* Desktop lock width to 390px content viewport width standard */
       }
     }
-    html, body {
+    html {
       min-height: 100vh;
       width: 100%;
       margin: 0;
@@ -431,12 +431,14 @@ function compileHtml(elements = [], googleFonts = [], backgroundColor = '#111111
       overflow-x: ${horizontalScroll ? 'auto' : 'hidden'};
     }
     body {
+      min-height: 100vh;
+      width: 100%;
+      margin: 0;
+      padding: 0;
       display: flex;
       justify-content: center;
       align-items: flex-start;
       font-family: 'Inter', system-ui, sans-serif;
-      overflow-x: ${horizontalScroll ? 'auto' : 'hidden'};
-      overflow-y: auto;
     }
     .zine-scroll {
       width: calc(100 * var(--w-unit));

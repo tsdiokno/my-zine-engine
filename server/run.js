@@ -417,7 +417,7 @@ function compileHtml(elements = [], googleFonts = [], backgroundColor = '#111111
       margin: 0;
       padding: 0;
     }
-    html, body {
+    html {
       width: 100%;
       min-height: 100vh;
       margin: 0;
@@ -428,12 +428,14 @@ function compileHtml(elements = [], googleFonts = [], backgroundColor = '#111111
       overflow-x: ${horizontalScroll ? 'auto' : 'hidden'};
     }
     body {
+      width: 100%;
+      min-height: 100vh;
+      margin: 0;
+      padding: 0;
       display: flex;
       justify-content: center;
       align-items: flex-start;
       font-family: 'Inter', system-ui, sans-serif;
-      overflow-x: ${horizontalScroll ? 'auto' : 'hidden'};
-      overflow-y: auto;
     }
     .zine-scroll {
       width: calc(100 * var(--w-unit));
