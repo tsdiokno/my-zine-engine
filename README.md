@@ -26,7 +26,7 @@ Before you proceed, decide how you want to interact with this engine. Choosing t
 ### 🌸 PATH A: I am a Zinester / Artist (I want to make zines!)
 You **do not** need to install any development dependencies, compile code, or run npm commands. You can run Zine Engine completely offline and "off the grid."
 
-1. **Do not click the green "Code" button.** Instead, go straight to the [**Releases**](/releases) tab on the right side of this page.
+1. **Do not click the green "Code" button.** Instead, go straight to the [[**Releases**]](https://github.com/tsdiokno/my-zine-engine/releases) tab on the right side of this page.
 2. Download the `Zine-Engine-Release.zip` from the latest release.
 3. Unzip the file anywhere on your computer.
 4. Open your terminal or command prompt, navigate to the unzipped folder, and run:
