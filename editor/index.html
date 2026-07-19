@@ -226,7 +226,6 @@
     .mobile-viewport-guide {
       position: absolute;
       top: 0;
-      bottom: 0;
       left: calc(var(--canvas-x-pct, 50) * (100% - 390px) / 100);
       width: 390px;
       border-left: 1px dashed rgba(255, 255, 255, 0.25);
@@ -346,7 +345,7 @@
 
     /* Floating Context Menu */
     #context-menu {
-      position: absolute;
+      position: fixed;
       background: #18181b;
       border: 1px solid #3f3f46;
       box-shadow: 0 10px 25px -5px rgba(0,0,0,0.5), 0 8px 10px -6px rgba(0,0,0,0.5);
@@ -1422,6 +1421,9 @@
       const bgFillType = document.getElementById('bgFillType');
       const bgSolidGroup = document.getElementById('bgSolidGroup');
       const bgGradientGroup = document.getElementById('bgGradientGroup');
+      const bgImageGroup = document.getElementById('bgImageGroup');
+      const bgImageInput = document.getElementById('bgImageInput');
+      const bgImageMode = document.getElementById('bgImageMode');
       const bgColor = document.getElementById('bgColor');
       const bgColorText = document.getElementById('bgColorText');
       const bgGradAngle = document.getElementById('bgGradAngle');
@@ -1434,6 +1436,7 @@
         bgFillType.value = 'gradient';
         if (bgSolidGroup) bgSolidGroup.style.display = 'none';
         if (bgGradientGroup) bgGradientGroup.style.display = 'block';
+        if (bgImageGroup) bgImageGroup.style.display = 'none';
         const bgGradAngleWrapper = document.getElementById('bgGradAngleWrapper');
         if (bgGradAngleWrapper) bgGradAngleWrapper.style.display = 'block';
         const regex = /linear-gradient\((\d+)deg,\s*(#[0-9a-fA-F]{3,6}),\s*(#[0-9a-fA-F]{3,6})\)/;
@@ -1447,6 +1450,7 @@
         bgFillType.value = 'radial-gradient';
         if (bgSolidGroup) bgSolidGroup.style.display = 'none';
         if (bgGradientGroup) bgGradientGroup.style.display = 'block';
+        if (bgImageGroup) bgImageGroup.style.display = 'none';
         const bgGradAngleWrapper = document.getElementById('bgGradAngleWrapper');
         if (bgGradAngleWrapper) bgGradAngleWrapper.style.display = 'none';
         const regex = /radial-gradient\(circle,\s*(#[0-9a-fA-F]{3,6}),\s*(#[0-9a-fA-F]{3,6})\)/;
@@ -1455,10 +1459,33 @@
           if (bgGradStart) bgGradStart.value = match[1];
           if (bgGradEnd) bgGradEnd.value = match[2];
         }
+      } else if (backgroundColor.includes('url(')) {
+        bgFillType.value = 'image';
+        if (bgSolidGroup) bgSolidGroup.style.display = 'none';
+        if (bgGradientGroup) bgGradientGroup.style.display = 'none';
+        if (bgImageGroup) bgImageGroup.style.display = 'block';
+        
+        const match = backgroundColor.match(/url\(['"]?([^'"]+?)['"]?\)/);
+        if (match && bgImageInput) {
+          bgImageInput.value = match[1];
+        }
+        
+        if (bgImageMode) {
+          if (backgroundColor.includes('contain')) {
+            bgImageMode.value = 'contain';
+          } else if (backgroundColor.includes('100% 100%')) {
+            bgImageMode.value = 'stretch';
+          } else if (backgroundColor.includes('repeat')) {
+            bgImageMode.value = 'tile';
+          } else {
+            bgImageMode.value = 'cover';
+          }
+        }
       } else {
         bgFillType.value = 'solid';
         if (bgSolidGroup) bgSolidGroup.style.display = 'block';
         if (bgGradientGroup) bgGradientGroup.style.display = 'none';
+        if (bgImageGroup) bgImageGroup.style.display = 'none';
         if (bgColor) bgColor.value = backgroundColor;
         if (bgColorText) bgColorText.value = backgroundColor;
       }
@@ -1507,6 +1534,10 @@
     const bgFillType = document.getElementById('bgFillType');
     const bgSolidGroup = document.getElementById('bgSolidGroup');
     const bgGradientGroup = document.getElementById('bgGradientGroup');
+    const bgImageGroup = document.getElementById('bgImageGroup');
+    const bgImageInput = document.getElementById('bgImageInput');
+    const bgImageUploadBtn = document.getElementById('bgImageUploadBtn');
+    const bgImageMode = document.getElementById('bgImageMode');
     const bgColor = document.getElementById('bgColor');
     const bgColorText = document.getElementById('bgColorText');
     const bgGradAngle = document.getElementById('bgGradAngle');
@@ -1923,6 +1954,7 @@
           bgFillType.value = 'gradient';
           bgSolidGroup.style.display = 'none';
           bgGradientGroup.style.display = 'block';
+          if (bgImageGroup) bgImageGroup.style.display = 'none';
           const bgGradAngleWrapper = document.getElementById('bgGradAngleWrapper');
           if (bgGradAngleWrapper) bgGradAngleWrapper.style.display = 'block';
           // Try parse: linear-gradient(45deg, #111111, #222225)
@@ -1937,6 +1969,7 @@
           bgFillType.value = 'radial-gradient';
           bgSolidGroup.style.display = 'none';
           bgGradientGroup.style.display = 'block';
+          if (bgImageGroup) bgImageGroup.style.display = 'none';
           const bgGradAngleWrapper = document.getElementById('bgGradAngleWrapper');
           if (bgGradAngleWrapper) bgGradAngleWrapper.style.display = 'none';
           // Try parse: radial-gradient(circle, #111111, #222225)
@@ -1946,10 +1979,33 @@
             bgGradStart.value = match[1];
             bgGradEnd.value = match[2];
           }
+        } else if (backgroundColor.includes('url(')) {
+          bgFillType.value = 'image';
+          bgSolidGroup.style.display = 'none';
+          bgGradientGroup.style.display = 'none';
+          if (bgImageGroup) bgImageGroup.style.display = 'block';
+          
+          const match = backgroundColor.match(/url\(['"]?([^'"]+?)['"]?\)/);
+          if (match && bgImageInput) {
+            bgImageInput.value = match[1];
+          }
+          
+          if (bgImageMode) {
+            if (backgroundColor.includes('contain')) {
+              bgImageMode.value = 'contain';
+            } else if (backgroundColor.includes('100% 100%')) {
+              bgImageMode.value = 'stretch';
+            } else if (backgroundColor.includes('repeat')) {
+              bgImageMode.value = 'tile';
+            } else {
+              bgImageMode.value = 'cover';
+            }
+          }
         } else {
           bgFillType.value = 'solid';
           bgSolidGroup.style.display = 'block';
           bgGradientGroup.style.display = 'none';
+          if (bgImageGroup) bgImageGroup.style.display = 'none';
           bgColor.value = backgroundColor;
           bgColorText.value = backgroundColor;
         }
@@ -1990,6 +2046,19 @@
         return `linear-gradient(${bgGradAngle.value}deg, ${bgGradStart.value}, ${bgGradEnd.value})`;
       } else if (bgFillType.value === 'radial-gradient') {
         return `radial-gradient(circle, ${bgGradStart.value}, ${bgGradEnd.value})`;
+      } else if (bgFillType.value === 'image') {
+        const url = bgImageInput.value.trim() || '';
+        const mode = bgImageMode.value || 'cover';
+        if (!url) return '#111111'; // default solid color if empty
+        if (mode === 'cover') {
+          return `url("${url}") no-repeat center center / cover`;
+        } else if (mode === 'contain') {
+          return `url("${url}") no-repeat center center / contain`;
+        } else if (mode === 'stretch') {
+          return `url("${url}") no-repeat center center / 100% 100%`;
+        } else if (mode === 'tile') {
+          return `url("${url}") repeat top left`;
+        }
       }
       return bgColor.value;
     }
@@ -2114,6 +2183,12 @@
       const pxHeight = Math.max(667, Math.round(maxElementY * (canvasWidth / 100)));
       canvas.style.height = `${pxHeight}px`;
       canvasHeightInfo.textContent = `Canvas size: 375 x ${pxHeight}px (Aspect-locked scale)`;
+
+      // Update mobile guidelines height to cover the expanded canvas fully
+      const guide = document.querySelector('.mobile-viewport-guide');
+      if (guide) {
+        guide.style.height = `${pxHeight}px`;
+      }
 
       // Render items
       elements.forEach((el, idx) => {
@@ -3709,22 +3784,29 @@
       }
     }
 
-    // Global Background triggers (Solid vs Gradient background)
+    // Global Background triggers (Solid vs Gradient vs Image background)
     bgFillType.addEventListener('change', () => {
       const type = bgFillType.value;
       if (type === 'gradient') {
-        bgSolidGroup.style.display = 'none';
-        bgGradientGroup.style.display = 'block';
+        if (bgSolidGroup) bgSolidGroup.style.display = 'none';
+        if (bgGradientGroup) bgGradientGroup.style.display = 'block';
+        if (bgImageGroup) bgImageGroup.style.display = 'none';
         const bgGradAngleWrapper = document.getElementById('bgGradAngleWrapper');
         if (bgGradAngleWrapper) bgGradAngleWrapper.style.display = 'block';
       } else if (type === 'radial-gradient') {
-        bgSolidGroup.style.display = 'none';
-        bgGradientGroup.style.display = 'block';
+        if (bgSolidGroup) bgSolidGroup.style.display = 'none';
+        if (bgGradientGroup) bgGradientGroup.style.display = 'block';
+        if (bgImageGroup) bgImageGroup.style.display = 'none';
         const bgGradAngleWrapper = document.getElementById('bgGradAngleWrapper');
         if (bgGradAngleWrapper) bgGradAngleWrapper.style.display = 'none';
+      } else if (type === 'image') {
+        if (bgSolidGroup) bgSolidGroup.style.display = 'none';
+        if (bgGradientGroup) bgGradientGroup.style.display = 'none';
+        if (bgImageGroup) bgImageGroup.style.display = 'block';
       } else {
-        bgSolidGroup.style.display = 'block';
-        bgGradientGroup.style.display = 'none';
+        if (bgSolidGroup) bgSolidGroup.style.display = 'block';
+        if (bgGradientGroup) bgGradientGroup.style.display = 'none';
+        if (bgImageGroup) bgImageGroup.style.display = 'none';
       }
       backgroundColor = compileBackgroundStyleString();
       renderCanvas();
@@ -3749,6 +3831,41 @@
     bgGradAngle.addEventListener('input', triggerGlobalBgUpdate);
     bgGradStart.addEventListener('input', triggerGlobalBgUpdate);
     bgGradEnd.addEventListener('input', triggerGlobalBgUpdate);
+
+    // Image Background inputs & upload
+    if (bgImageInput) bgImageInput.addEventListener('input', triggerGlobalBgUpdate);
+    if (bgImageMode) bgImageMode.addEventListener('change', triggerGlobalBgUpdate);
+    if (bgImageUploadBtn) {
+      bgImageUploadBtn.addEventListener('click', () => {
+        const tempUploader = document.createElement('input');
+        tempUploader.type = 'file';
+        tempUploader.accept = 'image/*';
+        tempUploader.addEventListener('change', async (e) => {
+          const file = e.target.files[0];
+          if (!file) return;
+
+          const formData = new FormData();
+          formData.append('file', file);
+
+          try {
+            const res = await fetch(`/api/upload?page=${encodeURIComponent(activePage)}`, {
+              method: 'POST',
+              body: formData
+            });
+            const data = await res.json();
+            
+            if (data.filename) {
+              bgImageInput.value = data.filename;
+              triggerGlobalBgUpdate();
+            }
+          } catch (err) {
+            console.error('Canvas background image upload failed', err);
+            alert('Upload failed!');
+          }
+        });
+        tempUploader.click();
+      });
+    }
 
     // Handle Page selector change
     pageSelect.addEventListener('change', () => {
@@ -4129,12 +4246,30 @@
 
     // CONTEXT MENU TRIGGERS
     function showContextMenu(clientX, clientY) {
-      const workspaceRect = document.getElementById('workspace').getBoundingClientRect();
-      const scrollContainer = document.getElementById('workspace');
-
-      contextMenu.style.top = `${clientY + scrollContainer.scrollTop - workspaceRect.top}px`;
-      contextMenu.style.left = `${clientX + scrollContainer.scrollLeft - workspaceRect.left}px`;
       contextMenu.style.display = 'block';
+
+      const menuWidth = contextMenu.offsetWidth || 220;
+      const menuHeight = contextMenu.offsetHeight || 300;
+
+      const viewportWidth = window.innerWidth;
+      const viewportHeight = window.innerHeight;
+
+      // Fit inside viewport with a 12px margin
+      let x = clientX;
+      let y = clientY;
+
+      if (x + menuWidth > viewportWidth) {
+        x = viewportWidth - menuWidth - 12;
+      }
+      if (y + menuHeight > viewportHeight) {
+        y = viewportHeight - menuHeight - 12;
+      }
+
+      x = Math.max(12, x);
+      y = Math.max(12, y);
+
+      contextMenu.style.left = `${x}px`;
+      contextMenu.style.top = `${y}px`;
     }
 
     function hideFloatingUI() {

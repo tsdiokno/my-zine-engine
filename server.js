@@ -403,9 +403,9 @@ function compileHtml(elements = [], googleFonts = [], backgroundColor = '#111111
     return html;
   }).join('\n');
 
-  // Check if background color contains gradient
+  // Check if background color contains gradient or image
   let containerBackgroundStyle = '';
-  if (backgroundColor.includes('gradient')) {
+  if (backgroundColor.includes('gradient') || backgroundColor.includes('url(')) {
     containerBackgroundStyle = `background: ${backgroundColor};`;
   } else {
     containerBackgroundStyle = `background-color: ${backgroundColor};`;
@@ -440,7 +440,7 @@ function compileHtml(elements = [], googleFonts = [], backgroundColor = '#111111
       padding: 0;
       ${containerBackgroundStyle}
       background-attachment: fixed;
-      background-size: cover;
+      ${!backgroundColor.includes('url(') ? 'background-size: cover;' : ''}
       overflow-x: ${horizontalScroll ? 'auto' : 'hidden'};
     }
     body {
@@ -695,7 +695,9 @@ app.post('/api/save-page', (req, res) => {
         customId: el.customId !== undefined ? String(el.customId) : undefined,
         hyperlink: el.hyperlink !== undefined ? String(el.hyperlink) : undefined,
         hyperlinkTarget: el.hyperlinkTarget !== undefined ? String(el.hyperlinkTarget) : undefined,
-        hyperlinkType: el.hyperlinkType !== undefined ? String(el.hyperlinkType) : undefined
+        hyperlinkType: el.hyperlinkType !== undefined ? String(el.hyperlinkType) : undefined,
+        shapeType: el.shapeType !== undefined ? String(el.shapeType) : undefined,
+        customSvgPath: el.customSvgPath !== undefined ? String(el.customSvgPath) : undefined
       };
     });
 

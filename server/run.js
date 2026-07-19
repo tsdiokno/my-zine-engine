@@ -437,7 +437,7 @@ function compileHtml(elements = [], googleFonts = [], backgroundColor = '#111111
       padding: 0;
       ${containerBackgroundStyle}
       background-attachment: fixed;
-      background-size: cover;
+      ${!backgroundColor.includes('url(') ? 'background-size: cover;' : ''}
       overflow-x: ${horizontalScroll ? 'auto' : 'hidden'};
     }
     body {
@@ -680,7 +680,10 @@ const server = http.createServer((req, res) => {
             paddingLeft: el.paddingLeft !== undefined ? Number(el.paddingLeft) : undefined,
             customId: el.customId !== undefined ? String(el.customId) : undefined,
             hyperlink: el.hyperlink !== undefined ? String(el.hyperlink) : undefined,
-            hyperlinkTarget: el.hyperlinkTarget !== undefined ? String(el.hyperlinkTarget) : undefined
+            hyperlinkTarget: el.hyperlinkTarget !== undefined ? String(el.hyperlinkTarget) : undefined,
+            hyperlinkType: el.hyperlinkType !== undefined ? String(el.hyperlinkType) : undefined,
+            shapeType: el.shapeType !== undefined ? String(el.shapeType) : undefined,
+            customSvgPath: el.customSvgPath !== undefined ? String(el.customSvgPath) : undefined
           };
         });
 
