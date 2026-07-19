@@ -1,5 +1,7 @@
 # 📼 Zine Engine
 
+![Screenshot](screenshot.png)
+
 We live in a screen-based world, but the modern web has traded creative freedom for algorithmic optimization and cloud dependency.
 
 **Zine Engine** exists to reclaim the browser as a site for tactile, autonomous art. We concede the hardware—the mobile device, the browser engine—but we reject the corporate ecosystem. It is an offline-first, drag-and-drop digital scrapbook that outputs 100% static, dependency-free HTML. You build it off the grid, and it lasts forever.
