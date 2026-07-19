@@ -148,6 +148,11 @@
       background-color: #3f3f46;
       border-color: #52525b;
     }
+    .btn.active {
+      background-color: #3b82f6;
+      border-color: #2563eb;
+      color: white;
+    }
     .btn-primary {
       background-color: #3b82f6;
       border-color: #2563eb;
@@ -199,9 +204,7 @@
     /* The Zine Canvas mimicking standard phone view */
     #canvas-container {
       position: relative;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
+      display: block;
       width: 100%;
       min-height: 100%;
     }
@@ -210,6 +213,7 @@
       min-height: 667px;
       background-color: transparent !important;
       position: relative;
+      left: calc(var(--canvas-x-pct, 50) * (100% - 390px) / 100);
       border: none;
       border-radius: 0;
       padding: 0 !important;
@@ -223,8 +227,7 @@
       position: absolute;
       top: 0;
       bottom: 0;
-      left: 50%;
-      transform: translateX(-50%);
+      left: calc(var(--canvas-x-pct, 50) * (100% - 390px) / 100);
       width: 390px;
       border-left: 1px dashed rgba(255, 255, 255, 0.25);
       border-right: 1px dashed rgba(255, 255, 255, 0.25);
@@ -620,6 +623,35 @@
       <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 12px; border-top: 1px solid #27272a; padding-top: 12px;">
         <label class="form-label" style="margin-bottom: 0;">WORKSPACE DOT GRID</label>
         <input type="checkbox" id="toggleDots" style="width: auto; cursor: pointer;" checked>
+      </div>
+
+      <!-- Guideline Alignment & Canvas Offset Controls -->
+      <div style="border-top: 1px solid #27272a; padding-top: 12px; margin-top: 12px;">
+        <label class="form-label" style="font-weight: 600; color: #f4f4f5; margin-bottom: 8px;">CANVAS VIEWPORT ALIGNMENT</label>
+        
+        <!-- Preset anchors -->
+        <div class="btn-group" style="grid-template-columns: repeat(3, 1fr); gap: 4px; margin-bottom: 8px;">
+          <button class="btn" id="alignCanvasLeft" style="padding: 6px 2px; font-size: 10px;" type="button">Left</button>
+          <button class="btn active" id="alignCanvasCenter" style="padding: 6px 2px; font-size: 10px;" type="button">Center</button>
+          <button class="btn" id="alignCanvasRight" style="padding: 6px 2px; font-size: 10px;" type="button">Right</button>
+        </div>
+
+        <!-- Custom slider horizontal offset -->
+        <div class="form-group" style="margin-bottom: 8px;">
+          <label class="form-label" style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+            <span>HORIZONTAL OFFSET</span>
+            <span id="canvasXVal" style="color: #a1a1aa; font-family: monospace;">50%</span>
+          </label>
+          <div class="slider-row" style="display: flex; align-items: center; gap: 8px;">
+            <input type="range" id="canvasXSlider" min="0" max="100" value="50" style="flex-grow: 1; cursor: pointer;">
+          </div>
+        </div>
+
+        <!-- Enable Horizontal Scroll toggle -->
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 8px; border-top: 1px dashed #27272a; padding-top: 8px;">
+          <label class="form-label" style="margin-bottom: 0;">ENABLE HORIZONTAL SCROLL</label>
+          <input type="checkbox" id="toggleHorizScroll" style="width: auto; cursor: pointer;">
+        </div>
       </div>
     </div>
 
@@ -1875,6 +1907,12 @@
         activeElementIndex = null;
         selectedIndices = [];
         isUnsaved = false;
+
+        // Load custom alignment and horizontal scroll specifically for this page
+        const canvasX = state.canvasX !== undefined ? state.canvasX : 50;
+        const horizontalScroll = state.horizontalScroll !== undefined ? state.horizontalScroll : false;
+        updateCanvasAlignment(canvasX, false);
+        updateHorizontalScroll(horizontalScroll, false);
         
         // Persist page route selection
         localStorage.setItem('zine-active-page', pagePath);
@@ -1983,7 +2021,9 @@
             pagePath: activePage,
             elements: (elements || []).filter(Boolean),
             googleFonts,
-            backgroundColor: bgVal
+            backgroundColor: bgVal,
+            canvasX: parseInt(document.getElementById('canvasXSlider')?.value || '50', 10),
+            horizontalScroll: !!document.getElementById('toggleHorizScroll')?.checked
           })
         });
 
@@ -3334,6 +3374,94 @@
       });
     }
 
+    // Guideline Alignment & Canvas Offset Functions
+    function updateCanvasAlignment(pct, markAsUnsaved = true) {
+      const container = document.getElementById('canvas-container');
+      if (container) {
+        container.style.setProperty('--canvas-x-pct', pct);
+      }
+      const slider = document.getElementById('canvasXSlider');
+      if (slider) {
+        slider.value = pct;
+      }
+      const valLabel = document.getElementById('canvasXVal');
+      if (valLabel) {
+        valLabel.textContent = `${pct}%`;
+      }
+      
+      const btnLeft = document.getElementById('alignCanvasLeft');
+      const btnCenter = document.getElementById('alignCanvasCenter');
+      const btnRight = document.getElementById('alignCanvasRight');
+      
+      if (btnLeft && btnCenter && btnRight) {
+        btnLeft.classList.remove('active');
+        btnCenter.classList.remove('active');
+        btnRight.classList.remove('active');
+        
+        const val = parseInt(pct);
+        if (val === 0) {
+          btnLeft.classList.add('active');
+        } else if (val === 50) {
+          btnCenter.classList.add('active');
+        } else if (val === 100) {
+          btnRight.classList.add('active');
+        }
+      }
+      
+      if (markAsUnsaved) {
+        isUnsaved = true;
+        updateSaveButtonState();
+      }
+    }
+
+    function updateHorizontalScroll(enabled, markAsUnsaved = true) {
+      const workspace = document.getElementById('workspace');
+      if (workspace) {
+        workspace.style.overflowX = enabled ? 'auto' : 'hidden';
+      }
+      const toggle = document.getElementById('toggleHorizScroll');
+      if (toggle) {
+        toggle.checked = enabled;
+      }
+      if (markAsUnsaved) {
+        isUnsaved = true;
+        updateSaveButtonState();
+      }
+    }
+
+    // Guideline & Horizontal Scroll Event Listeners
+    const alignCanvasLeft = document.getElementById('alignCanvasLeft');
+    const alignCanvasCenter = document.getElementById('alignCanvasCenter');
+    const alignCanvasRight = document.getElementById('alignCanvasRight');
+    const canvasXSlider = document.getElementById('canvasXSlider');
+    const toggleHorizScroll = document.getElementById('toggleHorizScroll');
+
+    if (alignCanvasLeft) {
+      alignCanvasLeft.addEventListener('click', () => {
+        updateCanvasAlignment(0);
+      });
+    }
+    if (alignCanvasCenter) {
+      alignCanvasCenter.addEventListener('click', () => {
+        updateCanvasAlignment(50);
+      });
+    }
+    if (alignCanvasRight) {
+      alignCanvasRight.addEventListener('click', () => {
+        updateCanvasAlignment(100);
+      });
+    }
+    if (canvasXSlider) {
+      canvasXSlider.addEventListener('input', () => {
+        updateCanvasAlignment(canvasXSlider.value);
+      });
+    }
+    if (toggleHorizScroll) {
+      toggleHorizScroll.addEventListener('change', () => {
+        updateHorizontalScroll(toggleHorizScroll.checked);
+      });
+    }
+
     // Hyperlink & Anchor ID Event Listeners
     propCustomId.addEventListener('input', () => {
       if (activeElementIndex !== null) {
@@ -4555,6 +4683,7 @@
     // Initialize Page
     async function init() {
       setupInspectorDrag();
+
       const savedPage = localStorage.getItem('zine-active-page') || '/';
       await loadPagesList(savedPage);
       await loadPageState(activePage || savedPage);

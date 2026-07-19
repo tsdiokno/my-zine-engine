@@ -127,7 +127,7 @@ function getRelativeHref(currentPath, targetPath) {
 }
 
 // Compiler to generate pixel-perfect vector-locked responsive HTML
-function compileHtml(elements = [], googleFonts = [], backgroundColor = '#111111', pagePath = '/') {
+function compileHtml(elements = [], googleFonts = [], backgroundColor = '#111111', pagePath = '/', canvasX = 50, horizontalScroll = false) {
   const fontLinks = (googleFonts || [])
     .map(font => `<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=${encodeURIComponent(font)}:wght@400;700;800;900&display=swap">`)
     .join('\n  ');
@@ -428,13 +428,14 @@ function compileHtml(elements = [], googleFonts = [], backgroundColor = '#111111
       ${containerBackgroundStyle}
       background-attachment: fixed;
       background-size: cover;
+      overflow-x: ${horizontalScroll ? 'auto' : 'hidden'};
     }
     body {
       display: flex;
       justify-content: center;
       align-items: flex-start;
       font-family: 'Inter', system-ui, sans-serif;
-      overflow-x: hidden;
+      overflow-x: ${horizontalScroll ? 'auto' : 'hidden'};
       overflow-y: auto;
     }
     .zine-scroll {
@@ -445,6 +446,16 @@ function compileHtml(elements = [], googleFonts = [], backgroundColor = '#111111
       background: transparent;
       overflow: visible;
       padding-bottom: calc(10 * var(--w-unit));
+    }
+    @media (min-width: 768px) {
+      body {
+        display: block;
+        position: relative;
+      }
+      .zine-scroll {
+        position: relative;
+        left: calc(${canvasX} * (100% - 390px) / 100);
+      }
     }
     .zine-element {
       user-select: none;
@@ -573,7 +584,7 @@ app.post('/api/upload', upload.single('file'), (req, res) => {
 
 // POST /api/save-page - Save page layout data & compile HTML
 app.post('/api/save-page', (req, res) => {
-  const { pagePath, elements, googleFonts, backgroundColor } = req.body;
+  const { pagePath, elements, googleFonts, backgroundColor, canvasX, horizontalScroll } = req.body;
   if (!pagePath) {
     return res.status(400).json({ error: 'Missing pagePath' });
   }
@@ -653,14 +664,23 @@ app.post('/api/save-page', (req, res) => {
     const statePayload = {
       elements: cleanElements,
       googleFonts: googleFonts || [],
-      backgroundColor: backgroundColor || '#111111'
+      backgroundColor: backgroundColor || '#111111',
+      canvasX: canvasX !== undefined ? Number(canvasX) : 50,
+      horizontalScroll: horizontalScroll !== undefined ? !!horizontalScroll : false
     };
 
     // Save state.json ONLY inside the zineSourceDir (zine-dist) - not inside dist
     fs.writeFileSync(path.join(targetDir2, 'state.json'), JSON.stringify(statePayload, null, 2), 'utf8');
 
     // Compile & write index.html to both (dist gets index.html only, zine-dist gets index.html and state.json)
-    const compiledHtml = compileHtml(statePayload.elements, statePayload.googleFonts, statePayload.backgroundColor, pagePath);
+    const compiledHtml = compileHtml(
+      statePayload.elements,
+      statePayload.googleFonts,
+      statePayload.backgroundColor,
+      pagePath,
+      statePayload.canvasX,
+      statePayload.horizontalScroll
+    );
     fs.writeFileSync(path.join(targetDir1, 'index.html'), compiledHtml, 'utf8');
     fs.writeFileSync(path.join(targetDir2, 'index.html'), compiledHtml, 'utf8');
 
