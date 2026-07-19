@@ -158,6 +158,19 @@ function compileHtml(elements = [], googleFonts = [], backgroundColor = '#111111
     }
   });
 
+  // Calculate horizontal bounds of elements for scrolling / centering logic
+  let minX = 0;
+  let maxX = 100;
+  if (horizontalScroll) {
+    (elements || []).forEach(el => {
+      if (!el) return;
+      const x = parseFloat(el.x) || 0;
+      const w = parseFloat(el.w) || 0;
+      if (x < minX) minX = x;
+      if (x + w > maxX) maxX = x + w;
+    });
+  }
+
   const elementsHtml = (elements || []).filter(Boolean).map((el, idx) => {
     const styleParts = [
       `position: absolute`,
@@ -433,7 +446,7 @@ function compileHtml(elements = [], googleFonts = [], backgroundColor = '#111111
       margin: 0;
       padding: 0;
       display: flex;
-      justify-content: center;
+      justify-content: ${horizontalScroll ? 'flex-start' : 'center'};
       align-items: flex-start;
       font-family: 'Inter', system-ui, sans-serif;
     }
@@ -445,15 +458,16 @@ function compileHtml(elements = [], googleFonts = [], backgroundColor = '#111111
       background: transparent;
       overflow: visible;
       padding-bottom: calc(10 * var(--w-unit));
+      ${horizontalScroll && minX < 0 ? `margin-left: calc(${Math.abs(minX)} * var(--w-unit));` : ''}
     }
     @media (min-width: 768px) {
       body {
-        display: block;
+        display: ${horizontalScroll ? 'flex' : 'block'};
         position: relative;
       }
       .zine-scroll {
         position: relative;
-        left: calc(${canvasX} * (100% - 390px) / 100);
+        ${horizontalScroll ? '' : `left: calc(${canvasX} * (100% - 390px) / 100);`}
       }
     }
     .zine-element {
@@ -466,6 +480,28 @@ function compileHtml(elements = [], googleFonts = [], backgroundColor = '#111111
   <div class="zine-scroll">
 ${elementsHtml}
   </div>
+  ${horizontalScroll ? `
+  <script>
+    (function() {
+      function adjustScroll() {
+        const temp = document.createElement('div');
+        temp.style.width = 'calc(1 * var(--w-unit))';
+        temp.style.position = 'absolute';
+        temp.style.visibility = 'hidden';
+        document.body.appendChild(temp);
+        const wUnitPx = temp.getBoundingClientRect().width || (window.innerWidth >= 768 ? 3.9 : window.innerWidth / 100);
+        temp.remove();
+        
+        const scrollOffset = Math.abs(${minX}) * wUnitPx + (${canvasX} / 100) * (100 * wUnitPx - window.innerWidth);
+        document.documentElement.scrollLeft = Math.max(0, scrollOffset);
+        document.body.scrollLeft = Math.max(0, scrollOffset);
+      }
+      window.addEventListener('DOMContentLoaded', adjustScroll);
+      window.addEventListener('load', adjustScroll);
+      window.addEventListener('resize', adjustScroll);
+    })();
+  </script>
+  ` : ''}
 </body>
 </html>`;
 }
