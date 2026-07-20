@@ -292,6 +292,13 @@
       white-space: pre-wrap;
       line-height: 1.2;
     }
+    .element-content-wrapper[contenteditable="true"],
+    .element-content-wrapper[contenteditable="true"]:focus,
+    .element-content-wrapper[contenteditable="true"]:active {
+      outline: none !important;
+      border: none !important;
+      box-shadow: none !important;
+    }
     .editor-element.shape-element svg {
       width: 100%;
       height: 100%;
@@ -1220,10 +1227,10 @@
     <div style="width: 1px; height: 18px; background: #3f3f46; margin: 0 2px;"></div>
     
     <!-- Character Fill Type (Solid, Linear, Radial) -->
-    <select id="rich-fill-type" style="background: #27272a; border: 1px solid #3f3f46; color: #fff; font-size: 11px; padding: 2px 4px; border-radius: 4px; outline: none; cursor: pointer; height: 28px;" title="Character Fill Type">
+    <select id="rich-fill-type" style="background: #27272a; border: 1px solid #3f3f46; color: #fff; font-size: 11px; padding: 2px 4px; border-radius: 4px; outline: none; cursor: pointer; height: 28px; max-width: 65px;" title="Character Fill Type">
       <option value="solid">Solid</option>
-      <option value="linear">Linear Grad</option>
-      <option value="radial">Radial Grad</option>
+      <option value="linear">Linear</option>
+      <option value="radial">Radial</option>
     </select>
 
     <!-- Solid Color picker button -->
@@ -1400,6 +1407,7 @@
     let isUnsaved = false;
     let lastClickTime = 0;
     let lastClickIdx = null;
+    let editingOverlay = null;
 
     // Undo / Redo Stacks
     let undoStack = [];
@@ -1578,6 +1586,33 @@
       }
     }
 
+    // Helper to update the position and dimensions of the ghost editing overlay
+    function updateEditingOverlay(div, idx) {
+      if (!editingOverlay) {
+        editingOverlay = document.createElement('div');
+        editingOverlay.id = 'inline-editing-ghost-overlay';
+        editingOverlay.style.position = 'absolute';
+        editingOverlay.style.pointerEvents = 'none';
+        editingOverlay.style.boxSizing = 'border-box';
+        // Elegant dashed blue layout boundary with a soft overlay glow
+        editingOverlay.style.border = '1px dashed #3b82f6';
+        editingOverlay.style.outline = '1px solid rgba(59, 130, 246, 0.4)';
+        editingOverlay.style.outlineOffset = '1px';
+        editingOverlay.style.zIndex = '99999';
+        canvas.appendChild(editingOverlay);
+      }
+
+      // Sync coordinate, transform, and rotation states exactly from the editing element
+      editingOverlay.style.left = div.style.left;
+      editingOverlay.style.top = div.style.top;
+      editingOverlay.style.width = div.style.width;
+      editingOverlay.style.height = `${div.offsetHeight}px`;
+      editingOverlay.style.transform = div.style.transform;
+      editingOverlay.style.transformStyle = div.style.transformStyle;
+      editingOverlay.style.transformOrigin = div.style.transformOrigin;
+      editingOverlay.style.backfaceVisibility = div.style.backfaceVisibility;
+    }
+
     // Helper to start inline contenteditable editing on a text element
     function startInlineEditing(idx) {
       const el = elements[idx];
@@ -1589,8 +1624,9 @@
       const contentWrapper = div.querySelector('.element-content-wrapper');
       if (!contentWrapper) return;
       
-      // Temporarily clear stacking drop shadows from the bounding box during active text editing
-      contentWrapper.style.filter = '';
+      // Remove active selection outline class and delete handles during active text editing
+      div.classList.remove('active');
+      div.querySelectorAll('.resize-handle, .rotate-handle').forEach(h => h.remove());
       
       contentWrapper.contentEditable = 'true';
       contentWrapper.focus();
@@ -1602,6 +1638,14 @@
       range.collapse(false);
       sel.removeAllRanges();
       sel.addRange(range);
+
+      // Create and align the ghost editing overlay
+      updateEditingOverlay(div, idx);
+
+      // Recalculate overlay height dynamically as text is typed or deleted
+      contentWrapper.addEventListener('input', () => {
+        updateEditingOverlay(div, idx);
+      });
     }
 
     // Helper to exit inline editing on all text elements, saving content and re-rendering with shadows restored
@@ -1619,6 +1663,13 @@
           }
         }
       });
+
+      // Clear the ghost editing overlay
+      if (editingOverlay) {
+        editingOverlay.remove();
+        editingOverlay = null;
+      }
+
       if (changed) {
         isUnsaved = true;
         updateSaveButtonState();
@@ -4663,13 +4714,29 @@
       const workspaceRect = document.getElementById('workspace').getBoundingClientRect();
       const scrollContainer = document.getElementById('workspace');
 
-      // Place it right above the active element
-      const quickbarTop = rect.top + scrollContainer.scrollTop - workspaceRect.top - 40;
-      const quickbarLeft = rect.left + scrollContainer.scrollLeft - workspaceRect.left + (rect.width / 2) - 110;
-
-      quickbar.style.top = `${Math.max(10, quickbarTop)}px`;
-      quickbar.style.left = `${Math.max(10, quickbarLeft)}px`;
+      // Temporarily show flex to measure actual dimensions
       quickbar.style.display = 'flex';
+      const qbWidth = quickbar.offsetWidth || 220;
+      const qbHeight = quickbar.offsetHeight || 38;
+
+      const workspaceWidth = workspaceRect.width;
+      const workspaceHeight = workspaceRect.height;
+
+      // Place it right above the active element
+      let quickbarTop = rect.top + scrollContainer.scrollTop - workspaceRect.top - qbHeight - 8;
+      let quickbarLeft = rect.left + scrollContainer.scrollLeft - workspaceRect.left + (rect.width / 2) - (qbWidth / 2);
+
+      // Flip below if it overflows above the top viewport edge
+      if (quickbarTop < 10) {
+        quickbarTop = rect.bottom + scrollContainer.scrollTop - workspaceRect.top + 8;
+      }
+
+      // Keep it constrained inside the workspace viewport boundary
+      quickbarTop = Math.max(10, Math.min(quickbarTop, workspaceHeight - qbHeight - 10));
+      quickbarLeft = Math.max(10, Math.min(quickbarLeft, workspaceWidth - qbWidth - 10));
+
+      quickbar.style.top = `${quickbarTop}px`;
+      quickbar.style.left = `${quickbarLeft}px`;
     }
 
     // CONTEXT MENU TRIGGERS
@@ -4915,12 +4982,27 @@
                 const scrollContainer = document.getElementById('workspace');
 
                 // Place toolbar right above the selection highlight
-                const barTop = rect.top + scrollContainer.scrollTop - workspaceRect.top - 48;
-                const barLeft = rect.left + scrollContainer.scrollLeft - workspaceRect.left + (rect.width / 2) - 200;
-
-                bar.style.top = `${Math.max(10, barTop)}px`;
-                bar.style.left = `${Math.max(10, barLeft)}px`;
                 bar.style.display = 'flex';
+                const barWidth = bar.offsetWidth || 560;
+                const barHeight = bar.offsetHeight || 42;
+
+                const workspaceWidth = workspaceRect.width;
+                const workspaceHeight = workspaceRect.height;
+
+                let top = rect.top + scrollContainer.scrollTop - workspaceRect.top - barHeight - 10;
+                let left = rect.left + scrollContainer.scrollLeft - workspaceRect.left + (rect.width / 2) - (barWidth / 2);
+
+                // If it goes above the top, place it below the selection instead
+                if (top < 10) {
+                  top = rect.bottom + scrollContainer.scrollTop - workspaceRect.top + 10;
+                }
+
+                // Keep constrained inside workspace viewport
+                top = Math.max(10, Math.min(top, workspaceHeight - barHeight - 10));
+                left = Math.max(10, Math.min(left, workspaceWidth - barWidth - 10));
+
+                bar.style.top = `${top}px`;
+                bar.style.left = `${left}px`;
                 return;
               }
             }
