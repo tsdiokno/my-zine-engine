@@ -9,6 +9,47 @@
  */
 
 import { editorStore, CANVAS_BASELINE_WIDTH } from './store';
+
+// ==========================================
+// WIRE-TRACKER DIAGNOSTIC TELEMETRY SYSTEM
+// ==========================================
+const WireTracker = {
+  logAction: (action, details) => {
+    console.log(`%c[ACTION: ${action}]`, 'color: #3b82f6; font-weight: bold;', details || '');
+  },
+  logState: (key, value) => {
+    console.log(`%c[STATE: ${key} updated]`, 'color: #10b981; font-weight: bold;', value);
+  },
+  logCanvas: (id, msg) => {
+    console.log(`%c[CANVAS: Element ID ${id}]`, 'color: #f59e0b; font-weight: bold;', msg);
+  },
+  validateSync: (checkName, expected, actual, el) => {
+    if (String(expected) === String(actual) || (expected == null && actual === '')) {
+      console.log(`%c[SYNC VALIDATION: Pass] ${checkName}`, 'color: #10b981; font-weight: bold;');
+    } else {
+      console.error(`%c[SYNC VALIDATION: Fail] ${checkName} | Expected: ${expected}, Actual: ${actual}`, 'color: #ef4444; font-weight: bold;', el);
+    }
+  }
+};
+window.WireTracker = WireTracker;
+
+// Intercept store updates
+const originalSet = editorStore.setState;
+editorStore.setState = (partial, replace) => {
+  const nextState = typeof partial === 'function' ? partial(editorStore.getState()) : partial;
+  if (nextState.elements) {
+     const diffs = nextState.elements.map((el, i) => {
+       const prev = editorStore.getState().elements[i];
+       if (JSON.stringify(el) !== JSON.stringify(prev)) return { idx: i, el };
+       return null;
+     }).filter(Boolean);
+     diffs.forEach(d => {
+       WireTracker.logState(`Element ${d.idx}`, d.el);
+     });
+  }
+  return originalSet(partial, replace);
+};
+
 import { createColorPicker } from './color-picker';
 import { computePosition, offset, flip, shift, autoUpdate } from '@floating-ui/dom';
 import { renderCanvas } from './canvas-renderer';
@@ -255,7 +296,67 @@ function bindUIControls(): void {
   };
 
   // Undo & Redo buttons
-  const undoBtn = document.getElementById('undoBtn');
+  
+  // Text Alignment
+  ['alignLeft', 'alignCenter', 'alignRight', 'alignJustify'].forEach((id, i) => {
+    const btn = document.getElementById(id);
+    const aligns = ['left', 'center', 'right', 'justify'];
+    if (btn) {
+      btn.addEventListener('click', () => {
+        updateActive({ textAlign: aligns[i] });
+      });
+    }
+  });
+
+  // Pages
+  const pageSelect = document.getElementById('pageSelect');
+  if (pageSelect) {
+    pageSelect.addEventListener('change', async (e) => {
+      const targetPage = e.target.value;
+      await savePageState(false);
+      editorStore.setState({ activePage: targetPage, elements: [] });
+      loadPageState(targetPage);
+    });
+  }
+
+  const addPageBtn = document.getElementById('addPageBtn');
+  if (addPageBtn) {
+    addPageBtn.addEventListener('click', async () => {
+      const pageName = prompt('Enter new page route/name (e.g. /about):');
+      if (!pageName) return;
+      try {
+        await fetch('/api/pages', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path: pageName, title: pageName })
+        });
+        await loadPagesList(pageName);
+        editorStore.setState({ activePage: pageName, elements: [] });
+        loadPageState(pageName);
+      } catch (err) {}
+    });
+  }
+
+  const duplicatePageBtn = document.getElementById('duplicatePageBtn');
+  if (duplicatePageBtn) {
+    duplicatePageBtn.addEventListener('click', async () => {
+      const active = editorStore.getState().activePage;
+      const pageName = prompt('Enter new page route for duplication (e.g. /about-copy):');
+      if (!pageName) return;
+      await savePageState(false);
+      try {
+        await fetch('/api/duplicate-page', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sourcePath: active, targetPath: pageName })
+        });
+        await loadPagesList(pageName);
+        editorStore.setState({ activePage: pageName, elements: [] });
+        loadPageState(pageName);
+      } catch (err) {}
+    });
+  }
+const undoBtn = document.getElementById('undoBtn');
   const redoBtn = document.getElementById('redoBtn');
   if (undoBtn) undoBtn.addEventListener('click', () => editorStore.getState().undo());
   if (redoBtn) redoBtn.addEventListener('click', () => editorStore.getState().redo());
@@ -315,7 +416,7 @@ function bindUIControls(): void {
   
   // Image Upload Logic
   const addImageBtn = document.getElementById('addImageBtn');
-  const fileUploader = document.getElementById('fileUploader') as HTMLInputElement | null;
+  fileUploader = document.getElementById('fileUploader') as HTMLInputElement | null;
   if (addImageBtn && fileUploader) {
     addImageBtn.addEventListener('click', () => {
       fileUploader.click();
@@ -386,6 +487,9 @@ function bindUIControls(): void {
 
   bindInput('propX', 'x', (v) => parseFloat(v) || 0);
   bindInput('propY', 'y', (v) => parseFloat(v) || 0);
+  
+  bindInput('propH', 'h', (v) => parseFloat(v) || 0);
+  bindInput('propShadowEnable', 'shadowEnable', null, true);
   bindInput('propW', 'w', (v) => parseFloat(v) || 10);
   bindInput('propH', 'h', (v) => parseFloat(v) || 10);
   bindInput('propOpacity', 'opacity', (v) => (parseFloat(v) || 100) / 100);
@@ -457,6 +561,167 @@ function bindUIControls(): void {
   bindInput('propBorderStyle', 'borderStyle');
   bindInput('propBorderColor', 'borderColor');
   bindInput('propElementBorderRadius', 'elementBorderRadius', (v) => parseInt(v, 10) || 0);
+
+  // Image Fill Upload
+  const bgImageBtn = document.getElementById('propBgImageUploadBtn');
+  fileUploader = document.getElementById('fileUploader');
+  if (bgImageBtn && fileUploader) {
+    bgImageBtn.addEventListener('click', () => {
+      // Temporarily override the uploader logic for background image
+      const oldChange = fileUploader.onchange;
+      fileUploader.onchange = async (e) => {
+        const target = e.target;
+        if (!target.files || target.files.length === 0) return;
+        const formData = new FormData();
+        formData.append('file', target.files[0]);
+        try {
+          const res = await fetch(`/api/upload?page=${encodeURIComponent(editorStore.getState().activePage || '/')}`, {
+            method: 'POST', body: formData
+          });
+          const data = await res.json();
+          const idx = getActiveIdx();
+          if (idx !== null) {
+            updateActive({ bgImage: data.filename });
+            const input = document.getElementById('propBgImageInput');
+            if (input) input.value = data.filename;
+          }
+        } catch (err) {}
+        fileUploader.value = '';
+        fileUploader.onchange = oldChange;
+      };
+      fileUploader.click();
+    });
+  }
+
+  bindInput('propBgImageInput', 'bgImage');
+  bindInput('propBgImageMode', 'bgImageMode');
+  bindInput('propSvgPresets', 'customSvgPath');
+  bindInput('propCustomSvgPath', 'customSvgPath');
+
+  // Padding
+  bindInput('propPaddingAll', 'paddingTop', (v) => parseFloat(v));
+  const padAll = document.getElementById('propPaddingAll');
+  if (padAll) {
+    padAll.addEventListener('input', (e) => {
+      const v = parseFloat(e.target.value);
+      updateActive({ paddingTop: v, paddingRight: v, paddingBottom: v, paddingLeft: v });
+    });
+  }
+  
+  const linkPad = document.getElementById('propLinkPadding');
+  if (linkPad) {
+    linkPad.addEventListener('change', (e) => {
+      const isLinked = e.target.checked;
+      document.getElementById('propLinkedPaddingGroup').style.display = isLinked ? 'flex' : 'none';
+      document.getElementById('propIndividualPaddingGroup').style.display = isLinked ? 'none' : 'flex';
+      updateActive({ linkPadding: isLinked });
+    });
+  }
+
+  bindInput('propPaddingTop', 'paddingTop', (v) => parseFloat(v));
+  bindInput('propPaddingRight', 'paddingRight', (v) => parseFloat(v));
+  bindInput('propPaddingBottom', 'paddingBottom', (v) => parseFloat(v));
+  bindInput('propPaddingLeft', 'paddingLeft', (v) => parseFloat(v));
+
+  // Hyperlinks
+  const hpType = document.getElementById('propHyperlinkType');
+  if (hpType) {
+    hpType.addEventListener('change', (e) => {
+      const v = e.target.value;
+      updateActive({ hyperlinkType: v });
+      document.getElementById('propLinkPageGroup').style.display = v === 'page' ? 'block' : 'none';
+      document.getElementById('propLinkAnchorGroup').style.display = v === 'anchor' ? 'block' : 'none';
+      document.getElementById('propLinkExternalGroup').style.display = v === 'external' ? 'block' : 'none';
+      document.getElementById('propLinkTargetGroup').style.display = (v !== 'none') ? 'block' : 'none';
+    });
+  }
+  
+  bindInput('propLinkPageSelect', 'hyperlink');
+  bindInput('propLinkAnchorSelect', 'hyperlink');
+  bindInput('propLinkAnchorInput', 'hyperlink');
+  bindInput('propLinkExternalInput', 'hyperlink');
+  bindInput('propLinkTarget', 'hyperlinkTarget');
+  
+  // Shadows
+  const shadowEnable = document.getElementById('propShadowEnable');
+  if (shadowEnable) {
+    shadowEnable.addEventListener('change', (e) => {
+      const enabled = e.target.checked;
+      updateActive({ shadowEnable: enabled });
+      document.getElementById('shadowControlsGroup').style.display = enabled ? 'block' : 'none';
+    });
+  }
+
+  const addShadowBtn = document.getElementById('addShadowBtn');
+  if (addShadowBtn) {
+    addShadowBtn.addEventListener('click', () => {
+      const idx = getActiveIdx();
+      if (idx === null) return;
+      const el = editorStore.getState().elements[idx];
+      const shadows = el.shadows ? [...el.shadows] : [];
+      shadows.push({ x: 4, y: 4, blur: 8, color: '#000000', opacity: 0.5 });
+      updateActive({ shadows });
+      renderShadowList(shadows);
+    });
+  }
+
+  function renderShadowList(shadows) {
+    const container = document.getElementById('shadowListContainer');
+    if (!container) return;
+    container.innerHTML = '';
+    if (!shadows) return;
+    
+    shadows.forEach((shadow, i) => {
+      const shadowDiv = document.createElement('div');
+      shadowDiv.style = "background: #18181b; border: 1px solid #3f3f46; border-radius: 6px; padding: 8px;";
+      shadowDiv.innerHTML = `
+        <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+          <span style="font-size: 10px; color: #a1a1aa;">Shadow ${i + 1}</span>
+          <span style="font-size: 10px; color: #ef4444; cursor: pointer;" onclick="window.removeShadow(${i})">Remove</span>
+        </div>
+        <div class="slider-row">
+          <input type="range" class="s-x" min="-50" max="50" value="${shadow.x}" style="width:40px;">
+          <input type="range" class="s-y" min="-50" max="50" value="${shadow.y}" style="width:40px;">
+          <input type="range" class="s-b" min="0" max="50" value="${shadow.blur}" style="width:40px;">
+        </div>
+        <div style="display: flex; gap: 4px; margin-top: 4px;">
+          <input type="color" class="s-c" value="${shadow.color}" style="height: 24px; padding: 0;">
+          <input type="range" class="s-o" min="0" max="1" step="0.05" value="${shadow.opacity}">
+        </div>
+      `;
+      
+      const updateS = () => {
+        const idx = getActiveIdx();
+        if (idx === null) return;
+        const el = editorStore.getState().elements[idx];
+        const newShadows = [...el.shadows];
+        newShadows[i] = {
+          x: parseFloat(shadowDiv.querySelector('.s-x').value),
+          y: parseFloat(shadowDiv.querySelector('.s-y').value),
+          blur: parseFloat(shadowDiv.querySelector('.s-b').value),
+          color: shadowDiv.querySelector('.s-c').value,
+          opacity: parseFloat(shadowDiv.querySelector('.s-o').value)
+        };
+        updateActive({ shadows: newShadows });
+      };
+      
+      shadowDiv.querySelectorAll('input').forEach(inp => {
+        inp.addEventListener('input', updateS);
+      });
+      container.appendChild(shadowDiv);
+    });
+  }
+  
+  window.removeShadow = (i) => {
+    const idx = getActiveIdx();
+    if (idx === null) return;
+    const el = editorStore.getState().elements[idx];
+    const newShadows = [...el.shadows];
+    newShadows.splice(i, 1);
+    updateActive({ shadows: newShadows });
+    renderShadowList(newShadows);
+  };
+
   bindInput('propShadowEnable', 'shadowEnable');
   bindInput('propBlend', 'blendMode');
 
@@ -581,9 +846,114 @@ function updatePropertiesPanelUI(): void {
   setInputVal('propShadowEnable', !!el.shadowEnable);
   setInputVal('propBlend', el.blendMode || 'normal');
   setInputVal('propCustomId', el.customId || '');
-  setInputVal('propHyperlinkType', el.hyperlinkType || 'none');
+  
+    const sh = document.getElementById('shapeHeightProp');
+    if (sh) {
+      if (el.type === 'shape' || el.type === 'image' || el.type === 'frame') {
+        sh.style.display = 'block';
+        setInputVal('propH', el.h || el.w || 30, 'propHVal');
+      } else {
+        sh.style.display = 'none';
+      }
+    }
+    setInputVal('propHyperlinkType', el.hyperlinkType || 'none');
   setInputVal('propLinkExternalInput', el.hyperlink || '');
-  setInputVal('propLinkTarget', el.hyperlinkTarget || '_self');
+  
+    
+    const undoBtn = document.getElementById('undoBtn');
+    if (undoBtn) {
+      const hasUndo = state.undoStack.length > 0;
+      undoBtn.disabled = !hasUndo;
+      undoBtn.style.opacity = hasUndo ? '1' : '0.5';
+      undoBtn.style.pointerEvents = hasUndo ? 'auto' : 'none';
+    }
+    const redoBtn = document.getElementById('redoBtn');
+    if (redoBtn) {
+      const hasRedo = state.redoStack.length > 0;
+      redoBtn.disabled = !hasRedo;
+      redoBtn.style.opacity = hasRedo ? '1' : '0.5';
+      redoBtn.style.pointerEvents = hasRedo ? 'auto' : 'none';
+    }
+    
+    // Set Text alignment active state
+    ['alignLeft', 'alignCenter', 'alignRight', 'alignJustify'].forEach((id, i) => {
+      const btn = document.getElementById(id);
+      const aligns = ['left', 'center', 'right', 'justify'];
+      if (btn) {
+        if (el && el.textAlign === aligns[i]) {
+          btn.classList.add('active');
+          btn.style.background = '#3b82f6';
+        } else {
+          btn.classList.remove('active');
+          btn.style.background = 'transparent';
+        }
+      }
+    });
+    const isLinked = el.linkPadding !== false;
+    const lp = document.getElementById('propLinkPadding');
+    if (lp) lp.checked = isLinked;
+    const grpLink = document.getElementById('propLinkedPaddingGroup');
+    const grpIndiv = document.getElementById('propIndividualPaddingGroup');
+    if (grpLink) grpLink.style.display = isLinked ? 'flex' : 'none';
+    if (grpIndiv) grpIndiv.style.display = isLinked ? 'none' : 'flex';
+    
+    setInputVal('propPaddingAll', el.paddingTop || 0, 'propPaddingAllVal');
+    setInputVal('propPaddingTop', el.paddingTop || 0, 'propPaddingTopVal');
+    setInputVal('propPaddingRight', el.paddingRight || 0, 'propPaddingRightVal');
+    setInputVal('propPaddingBottom', el.paddingBottom || 0, 'propPaddingBottomVal');
+    setInputVal('propPaddingLeft', el.paddingLeft || 0, 'propPaddingLeftVal');
+
+    // WIRE-TRACKER: Validate UI Sync
+    if (typeof window.WireTracker !== 'undefined' && idx !== null) {
+      setTimeout(() => {
+        const val = (id) => {
+           const el = document.getElementById(id);
+           if (!el) return null;
+           if (el.type === 'checkbox') return el.checked;
+           return el.value;
+        };
+        const st = editorStore.getState().elements[idx];
+        if (!st) return;
+        
+        WireTracker.validateSync('X Position', st.x, val('propX'), document.getElementById('propX'));
+        WireTracker.validateSync('Y Position', st.y, val('propY'), document.getElementById('propY'));
+        WireTracker.validateSync('Width', st.w, val('propW'), document.getElementById('propW'));
+        WireTracker.validateSync('Opacity', (st.opacity !== undefined ? st.opacity * 100 : 100), val('propOpacity'), document.getElementById('propOpacity'));
+        WireTracker.validateSync('Background Image Mode', st.bgImageMode || 'cover', val('propBgImageMode'), document.getElementById('propBgImageMode'));
+        WireTracker.validateSync('Hyperlink Type', st.hyperlinkType || 'none', val('propHyperlinkType'), document.getElementById('propHyperlinkType'));
+      }, 0);
+    }
+    
+    setInputVal('propBgImageInput', el.bgImage || '');
+    setInputVal('propBgImageMode', el.bgImageMode || 'cover');
+    setInputVal('propSvgPresets', el.customSvgPath || '');
+    setInputVal('propCustomSvgPath', el.customSvgPath || '');
+    
+    const se = document.getElementById('propShadowEnable');
+    if (se) {
+      se.checked = el.shadowEnable || false;
+      const grp = document.getElementById('shadowControlsGroup');
+      if (grp) grp.style.display = el.shadowEnable ? 'block' : 'none';
+      if (typeof renderShadowList === 'function') renderShadowList(el.shadows || []);
+    }
+    
+    setInputVal('propHyperlinkType', el.hyperlinkType || 'none');
+    const ht = el.hyperlinkType || 'none';
+    const hpGroup = document.getElementById('propLinkPageGroup');
+    const haGroup = document.getElementById('propLinkAnchorGroup');
+    const heGroup = document.getElementById('propLinkExternalGroup');
+    const htGroup = document.getElementById('propLinkTargetGroup');
+    if (hpGroup) hpGroup.style.display = ht === 'page' ? 'block' : 'none';
+    if (haGroup) haGroup.style.display = ht === 'anchor' ? 'block' : 'none';
+    if (heGroup) heGroup.style.display = ht === 'external' ? 'block' : 'none';
+    if (htGroup) htGroup.style.display = ht !== 'none' ? 'block' : 'none';
+    
+    if (ht === 'page') setInputVal('propLinkPageSelect', el.hyperlink || '');
+    else if (ht === 'anchor') setInputVal('propLinkAnchorInput', el.hyperlink || '');
+    else if (ht === 'external') setInputVal('propLinkExternalInput', el.hyperlink || '');
+    
+    setInputVal('propLinkTarget', el.hyperlinkTarget || '_self');
+
 
   // Background Controls
   const bgColorInput = document.getElementById('bgColor') as HTMLInputElement | null;
@@ -727,6 +1097,24 @@ let cleanupRichQuickbar: (() => void) | null = null;
 let cleanupContextMenu: (() => void) | null = null;
 let isDraggingInspector = false;
 
+
+    // WIRE-TRACKER: Global UI Event Interceptor
+    if (typeof window.WireTracker !== 'undefined') {
+      document.body.addEventListener('input', (e) => {
+        const target = e.target;
+        if (target && target.id && target.id.startsWith('prop')) {
+          WireTracker.logAction('Input Changed', `ID: ${target.id}, Value: ${target.value}`);
+        }
+      });
+      document.body.addEventListener('click', (e) => {
+        const target = e.target;
+        if (target && target.id && target.id.startsWith('prop')) {
+          WireTracker.logAction('Click / Toggle', `ID: ${target.id}, Value: ${target.value || target.checked}`);
+        } else if (target && target.tagName === 'BUTTON') {
+          WireTracker.logAction('Button Clicked', `Text: ${target.innerText}, ID: ${target.id}`);
+        }
+      });
+    }
 function setupFloatingUI() {
   const canvas = document.getElementById('canvas');
   if (!canvas) return;

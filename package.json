@@ -29,8 +29,10 @@
     "moveable": "^0.53.0",
     "multer": "^2.2.0",
     "panzoom": "^9.4.4",
+    "present": "^1.0.0",
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
+    "scripts": "^0.1.0",
     "vite": "^6.2.3",
     "zundo": "^2.3.0",
     "zustand": "^5.0.14"
