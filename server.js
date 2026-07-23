@@ -1,12 +1,39 @@
+/**
+ * =============================================================================
+ * MODULE: Zine Engine Runtime Express Production Server (`server.js`)
+ * SINGLE RESPONSIBILITY:
+ *   Acts as the central HTTP service layer for state persistence, HTML compilation,
+ *   asset uploads, page routing, and static distribution serving.
+ *
+ * SYSTEM ARCHITECTURE & DATA FLOW:
+ *   1. REST API Endpoints (`/api/pages`, `/api/state`, `/api/save-page`, `/api/upload`):
+ *      Serves as the RPC pipeline for the visual canvas editor (`editor/index.html`).
+ *   2. On-the-Fly Static HTML Compilation (`compileHtml`):
+ *      Transforms raw element JSON snapshots (`state.json`) into self-contained,
+ *      pixel-perfect static `index.html` publications using CSS variable-driven
+ *      viewport scaling unit calculations (`--w-unit: min(1vw, 3.9px)`).
+ *   3. Path Sanitization (`getDirForPath`):
+ *      Normalizes URI routes to prevent directory traversal attacks (`..` stripping).
+ *   4. File Asset Management (Multer):
+ *      Performs multi-part file uploads into target page output directories.
+ *
+ * KEY CONCEPTS & DEPENDENCIES:
+ *   - Express.js HTTP framework.
+ *   - Multer middleware for streaming disk asset uploads.
+ *   - Node.js Native Filesystem (`fs`) & Path module.
+ * =============================================================================
+ */
+
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
 import multer from 'multer';
+import { createServer as createViteServer } from 'vite';
 
 const app = express();
 const PORT = 3000;
 
-// Body parser with 50mb payload limit to support large editor configurations
+// Body parser with 50mb payload limit to support large editor configurations with inline base64 media
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
@@ -25,7 +52,13 @@ if (!fs.existsSync(editorDir)) {
   fs.mkdirSync(editorDir, { recursive: true });
 }
 
-// Helper to resolve and sanitize paths to prevent directory traversal
+/**
+ * Sanitizes page routing paths and maps them safely to absolute output directories inside `dist/`.
+ * NOTE: Explicitly strips `..` parent path traversal segments to prevent arbitrary filesystem writes.
+ *
+ * @param {string} pagePath Target URL path (e.g., '/issue-01/article')
+ * @returns {string} Clean filesystem path inside the output directory
+ */
 function getDirForPath(pagePath) {
   let cleanPath = (pagePath || '/').replace(/[\\/]+/g, '/');
   // Remove leading/trailing slashes for directory construction
@@ -103,8 +136,43 @@ if (!fs.existsSync(homeStatePath)) {
   fs.writeFileSync(path.join(homeDir, 'index.html'), compileHtml(defaultState.elements, defaultState.googleFonts, defaultState.backgroundColor));
 }
 
-// Compiler to generate pixel-perfect vector-locked responsive HTML
-function compileHtml(elements = [], googleFonts = [], backgroundColor = '#111111') {
+/**
+ * Calculates relative navigation URLs between zine sub-pages for offline static serving.
+ * HOW IT WORKS:
+ * Dynamically counts depth levels (`depth * '../'`) to guarantee that generated static HTML
+ * hyperlinks operate correctly when served off local disk (`file://`) or static CDNs without
+ * requiring server-side URL rewrite proxies.
+ */
+function getRelativeHref(currentPath, targetPath) {
+  if (!targetPath) return '';
+  if (targetPath.match(/^(https?:\/\/|mailto:|tel:|#)/i)) {
+    return targetPath;
+  }
+  const current = currentPath === '/' ? '' : currentPath.replace(/^\//, '').replace(/\/$/, '');
+  const target = targetPath === '/' ? '' : targetPath.replace(/^\//, '').replace(/\/$/, '');
+  if (current === target) {
+    return 'index.html';
+  }
+  const currentSegments = current ? current.split('/') : [];
+  const depth = currentSegments.length;
+  let prefix = '';
+  for (let i = 0; i < depth; i++) {
+    prefix += '../';
+  }
+  if (!target) {
+    return prefix + 'index.html';
+  } else {
+    return prefix + target + '/index.html';
+  }
+}
+
+/**
+ * Compiles in-memory element arrays into standalone static responsive HTML documents.
+ * DESIGN DECISION:
+ * Uses a CSS custom property baseline unit `--w-unit: min(1vw, 3.9px)` which clamps
+ * scaling to a maximum 390px viewport while preserving responsive scalability on smaller mobile screens.
+ */
+function compileHtml(elements = [], googleFonts = [], backgroundColor = '#111111', pagePath = '/', canvasX = 50, horizontalScroll = false) {
   const fontLinks = (googleFonts || [])
     .map(font => `<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=${encodeURIComponent(font)}:wght@400;700;800;900&display=swap">`)
     .join('\n  ');
@@ -124,6 +192,19 @@ function compileHtml(elements = [], googleFonts = [], backgroundColor = '#111111
       maxElementY = bottomY;
     }
   });
+
+  // Calculate horizontal bounds of elements for scrolling / centering logic
+  let minX = 0;
+  let maxX = 100;
+  if (horizontalScroll) {
+    (elements || []).forEach(el => {
+      if (!el) return;
+      const x = parseFloat(el.x) || 0;
+      const w = parseFloat(el.w) || 0;
+      if (x < minX) minX = x;
+      if (x + w > maxX) maxX = x + w;
+    });
+  }
 
   const elementsHtml = (elements || []).filter(Boolean).map((el, idx) => {
     const styleParts = [
@@ -160,14 +241,46 @@ function compileHtml(elements = [], googleFonts = [], backgroundColor = '#111111
       styleParts.push(`overflow: hidden`);
     }
 
+    if (el.opacity !== undefined && el.opacity !== null) {
+      styleParts.push(`opacity: ${Number(el.opacity) / 100}`);
+    }
+
     // Shadow controls for all elements
     if (el.shadowEnable) {
-      const sx = el.shadowX !== undefined ? el.shadowX : 4;
-      const sy = el.shadowY !== undefined ? el.shadowY : 4;
-      const sblur = el.shadowBlur !== undefined ? el.shadowBlur : 8;
-      const scolor = el.shadowColor || '#000000';
-      styleParts.push(`filter: drop-shadow(${sx}px ${sy}px ${sblur}px ${scolor})`);
+      if (el.shadows && el.shadows.length > 0) {
+        const shadowFilters = el.shadows.map(s => {
+          const sx = s.x !== undefined ? s.x : 4;
+          const sy = s.y !== undefined ? s.y : 4;
+          const sblur = s.blur !== undefined ? s.blur : 8;
+          const scolor = s.color || '#000000';
+          const sopacity = s.opacity !== undefined ? s.opacity : 1;
+          
+          const hex = scolor.replace('#', '');
+          let r = 0, g = 0, b = 0;
+          if (hex.length === 3) {
+            r = parseInt(hex[0] + hex[0], 16) || 0;
+            g = parseInt(hex[1] + hex[1], 16) || 0;
+            b = parseInt(hex[2] + hex[2], 16) || 0;
+          } else if (hex.length === 6) {
+            r = parseInt(hex.substring(0, 2), 16) || 0;
+            g = parseInt(hex.substring(2, 4), 16) || 0;
+            b = parseInt(hex.substring(4, 6), 16) || 0;
+          }
+          const rgbaColor = `rgba(${r}, ${g}, ${b}, ${sopacity})`;
+          return `drop-shadow(${sx}px ${sy}px ${sblur}px ${rgbaColor})`;
+        }).join(' ');
+        styleParts.push(`filter: ${shadowFilters}`);
+      } else {
+        const sx = el.shadowX !== undefined ? el.shadowX : 4;
+        const sy = el.shadowY !== undefined ? el.shadowY : 4;
+        const sblur = el.shadowBlur !== undefined ? el.shadowBlur : 8;
+        const scolor = el.shadowColor || '#000000';
+        styleParts.push(`filter: drop-shadow(${sx}px ${sy}px ${sblur}px ${scolor})`);
+      }
     }
+
+    let html = '';
+    const elementId = el.customId || `element-${idx}`;
 
     if (el.type === 'text') {
       styleParts.push(`font-size: calc(${el.fontSize || 4} * var(--w-unit))`);
@@ -176,6 +289,20 @@ function compileHtml(elements = [], googleFonts = [], backgroundColor = '#111111
       styleParts.push(`font-weight: ${el.fontWeight || '400'}`);
       styleParts.push(`white-space: pre-wrap`);
       styleParts.push(`line-height: ${el.leading !== undefined && el.leading !== '' ? el.leading : 1.2}`);
+
+      // Padding for text elements
+      if (el.paddingTop !== undefined) {
+        styleParts.push(`padding-top: calc(${el.paddingTop} * var(--w-unit))`);
+      }
+      if (el.paddingRight !== undefined) {
+        styleParts.push(`padding-right: calc(${el.paddingRight} * var(--w-unit))`);
+      }
+      if (el.paddingBottom !== undefined) {
+        styleParts.push(`padding-bottom: calc(${el.paddingBottom} * var(--w-unit))`);
+      }
+      if (el.paddingLeft !== undefined) {
+        styleParts.push(`padding-left: calc(${el.paddingLeft} * var(--w-unit))`);
+      }
 
       // Letter-spacing (Tracking)
       if (el.tracking !== undefined && el.tracking !== '') {
@@ -190,19 +317,29 @@ function compileHtml(elements = [], googleFonts = [], backgroundColor = '#111111
         styleParts.push(`background: linear-gradient(${angle}deg, ${start}, ${end})`);
         styleParts.push(`-webkit-background-clip: text`);
         styleParts.push(`-webkit-text-fill-color: transparent`);
+      } else if (el.fillType === 'radial-gradient') {
+        const start = el.gradientColorStart || '#ff007f';
+        const end = el.gradientColorEnd || '#7f00ff';
+        styleParts.push(`background: radial-gradient(circle, ${start}, ${end})`);
+        styleParts.push(`-webkit-background-clip: text`);
+        styleParts.push(`-webkit-text-fill-color: transparent`);
       } else {
         styleParts.push(`color: ${el.color || '#ffffff'}`);
       }
       
-      const formattedText = (el.text || '').replace(/\n/g, '<br>');
-      return `    <div id="element-${idx}" class="zine-element text-element" style="${styleParts.join('; ')}">${formattedText}</div>`;
+      const textRaw = el.content !== undefined ? el.content : (el.text || '');
+      const formattedText = textRaw.replace(/\n/g, '<br>');
+      html = `    <div id="${elementId}" class="zine-element text-element" style="${styleParts.join('; ')}">${formattedText}</div>`;
     } else if (el.type === 'image') {
+      if (el.h) {
+        styleParts.push(`height: calc(${el.h} * var(--w-unit))`);
+      }
       if (el.aspectRatio) {
         styleParts.push(`aspect-ratio: ${el.aspectRatio}`);
       }
-      return `    <img id="element-${idx}" class="zine-element image-element" src="${el.src}" style="${styleParts.join('; ')}; object-fit: cover;" referrerPolicy="no-referrer" />`;
+      html = `    <img id="${elementId}" class="zine-element image-element" src="${el.src}" style="${styleParts.join('; ')}; object-fit: cover;" referrerPolicy="no-referrer" />`;
     } else if (el.type === 'shape') {
-      // Shape SVG compiler supporting solid/gradient fills and strokes
+      // Shape SVG compiler supporting solid/gradient fills, image patterns, and strokes
       const widthUnits = el.w || 30;
       // Default height ratio or custom height
       const heightUnits = el.h || widthUnits;
@@ -231,6 +368,49 @@ function compileHtml(elements = [], googleFonts = [], backgroundColor = '#111111
         </linearGradient>
       </defs>`;
         fillAttr = `url(#shape-grad-${idx})`;
+      } else if (el.fillType === 'radial-gradient') {
+        const start = el.gradientColorStart || '#ff007f';
+        const end = el.gradientColorEnd || '#7f00ff';
+
+        gradientDef = `
+      <defs>
+        <radialGradient id="shape-radgrad-${idx}" cx="50%" cy="50%" r="50%" fx="50%" fy="50%">
+          <stop offset="0%" stop-color="${start}" />
+          <stop offset="100%" stop-color="${end}" />
+        </radialGradient>
+      </defs>`;
+        fillAttr = `url(#shape-radgrad-${idx})`;
+      } else if (el.fillType === 'image') {
+        const imgUrl = el.bgImage || '';
+        const imgMode = el.bgImageMode || 'cover';
+        let preserveRatio = 'none';
+        let patternUnits = 'objectBoundingBox';
+
+        if (imgMode === 'cover') {
+          preserveRatio = 'xMidYMid slice';
+        } else if (imgMode === 'contain') {
+          preserveRatio = 'xMidYMid meet';
+        } else if (imgMode === 'tile') {
+          patternUnits = 'userSpaceOnUse';
+          preserveRatio = 'none';
+        }
+
+        if (patternUnits === 'userSpaceOnUse') {
+          gradientDef = `
+      <defs>
+        <pattern id="shape-img-${idx}" width="40" height="40" patternUnits="userSpaceOnUse">
+          <image href="${imgUrl}" x="0" y="0" width="40" height="40" preserveAspectRatio="${preserveRatio}" />
+        </pattern>
+      </defs>`;
+        } else {
+          gradientDef = `
+      <defs>
+        <pattern id="shape-img-${idx}" width="1" height="1" patternContentUnits="objectBoundingBox">
+          <image href="${imgUrl}" x="0" y="0" width="1" height="1" preserveAspectRatio="${preserveRatio}" />
+        </pattern>
+      </defs>`;
+        }
+        fillAttr = `url(#shape-img-${idx})`;
       }
 
       const strokeAttr = el.strokeColor || 'none';
@@ -254,25 +434,34 @@ function compileHtml(elements = [], googleFonts = [], backgroundColor = '#111111
         shapeSvgElement = `<path d="${pathData}" fill="${fillAttr}" stroke="${strokeAttr}" stroke-width="${strokeWidthAttr}" stroke-linecap="round" stroke-linejoin="round" />`;
       }
 
-      return `    <div id="element-${idx}" class="zine-element shape-element" style="${styleParts.join('; ')}">
+      html = `    <div id="${elementId}" class="zine-element shape-element" style="${styleParts.join('; ')}">
       <svg viewBox="0 0 100 100" width="100%" height="100%" preserveAspectRatio="none">${gradientDef}
         ${shapeSvgElement}
       </svg>
     </div>`;
     }
-    return '';
+
+    if (html && el.hyperlink) {
+      const relHref = getRelativeHref(pagePath, el.hyperlink);
+      const targetAttr = el.hyperlinkTarget === '_blank' ? ' target="_blank"' : '';
+      return `    <a href="${relHref}"${targetAttr} style="display: contents; text-decoration: none; color: inherit; outline: none;">
+    ${html.trim()}
+    </a>`;
+    }
+
+    return html;
   }).join('\n');
 
-  // Check if background color contains gradient
+  // Check if background color contains gradient or image
   let containerBackgroundStyle = '';
-  if (backgroundColor.includes('gradient')) {
+  if (backgroundColor.includes('gradient') || backgroundColor.includes('url(')) {
     containerBackgroundStyle = `background: ${backgroundColor};`;
   } else {
     containerBackgroundStyle = `background-color: ${backgroundColor};`;
   }
 
   return `<!DOCTYPE html>
-<html lang="en">
+<html lang="en" style="scroll-behavior: smooth;">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -288,27 +477,30 @@ function compileHtml(elements = [], googleFonts = [], backgroundColor = '#111111
     :root {
       --w-unit: 1vw;
     }
-    @media (min-width: 650px) {
+    @media (min-width: 768px) {
       :root {
-        --w-unit: 5.5px;
+        --w-unit: 3.9px; /* Desktop lock width to 390px content viewport width standard */
       }
     }
-    html, body {
+    html {
       min-height: 100vh;
       width: 100%;
       margin: 0;
       padding: 0;
       ${containerBackgroundStyle}
       background-attachment: fixed;
-      background-size: cover;
+      ${!backgroundColor.includes('url(') ? 'background-size: cover;' : ''}
+      overflow-x: ${horizontalScroll ? 'auto' : 'hidden'};
     }
     body {
+      min-height: 100vh;
+      width: 100%;
+      margin: 0;
+      padding: 0;
       display: flex;
-      justify-content: center;
+      justify-content: ${horizontalScroll ? 'flex-start' : 'center'};
       align-items: flex-start;
       font-family: 'Inter', system-ui, sans-serif;
-      overflow-x: hidden;
-      overflow-y: auto;
     }
     .zine-scroll {
       width: calc(100 * var(--w-unit));
@@ -318,6 +510,17 @@ function compileHtml(elements = [], googleFonts = [], backgroundColor = '#111111
       background: transparent;
       overflow: visible;
       padding-bottom: calc(10 * var(--w-unit));
+      ${horizontalScroll && minX < 0 ? `margin-left: calc(${Math.abs(minX)} * var(--w-unit));` : ''}
+    }
+    @media (min-width: 768px) {
+      body {
+        display: ${horizontalScroll ? 'flex' : 'block'};
+        position: relative;
+      }
+      .zine-scroll {
+        position: relative;
+        ${horizontalScroll ? '' : `left: calc(${canvasX} * (100% - 390px) / 100);`}
+      }
     }
     .zine-element {
       user-select: none;
@@ -329,6 +532,28 @@ function compileHtml(elements = [], googleFonts = [], backgroundColor = '#111111
   <div class="zine-scroll">
 ${elementsHtml}
   </div>
+  ${horizontalScroll ? `
+  <script>
+    (function() {
+      function adjustScroll() {
+        const temp = document.createElement('div');
+        temp.style.width = 'calc(1 * var(--w-unit))';
+        temp.style.position = 'absolute';
+        temp.style.visibility = 'hidden';
+        document.body.appendChild(temp);
+        const wUnitPx = temp.getBoundingClientRect().width || (window.innerWidth >= 768 ? 3.9 : window.innerWidth / 100);
+        temp.remove();
+        
+        const scrollOffset = Math.abs(${minX}) * wUnitPx + (${canvasX} / 100) * (100 * wUnitPx - window.innerWidth);
+        document.documentElement.scrollLeft = Math.max(0, scrollOffset);
+        document.body.scrollLeft = Math.max(0, scrollOffset);
+      }
+      window.addEventListener('DOMContentLoaded', adjustScroll);
+      window.addEventListener('load', adjustScroll);
+      window.addEventListener('resize', adjustScroll);
+    })();
+  </script>
+  ` : ''}
 </body>
 </html>`;
 }
@@ -446,7 +671,7 @@ app.post('/api/upload', upload.single('file'), (req, res) => {
 
 // POST /api/save-page - Save page layout data & compile HTML
 app.post('/api/save-page', (req, res) => {
-  const { pagePath, elements, googleFonts, backgroundColor } = req.body;
+  const { pagePath, elements, googleFonts, backgroundColor, canvasX, horizontalScroll } = req.body;
   if (!pagePath) {
     return res.status(400).json({ error: 'Missing pagePath' });
   }
@@ -468,7 +693,8 @@ app.post('/api/save-page', (req, res) => {
         y: el.y !== undefined ? Number(el.y) : 0,
         w: el.w !== undefined ? Number(el.w) : 0,
         h: el.h !== undefined ? Number(el.h) : 0,
-        text: el.text || '',
+        content: el.content || el.text || '',
+        text: el.content || el.text || '',
         src: el.src || '',
         fontSize: el.fontSize !== undefined ? Number(el.fontSize) : undefined,
         fontFamily: el.fontFamily,
@@ -500,21 +726,51 @@ app.post('/api/save-page', (req, res) => {
         shadowY: el.shadowY !== undefined ? Number(el.shadowY) : undefined,
         tracking: el.tracking !== undefined ? String(el.tracking) : undefined,
         leading: el.leading !== undefined ? Number(el.leading) : undefined,
-        aspectRatio: el.aspectRatio
+        aspectRatio: el.aspectRatio,
+        bgImage: el.bgImage,
+        bgImageMode: el.bgImageMode,
+        opacity: el.opacity !== undefined && el.opacity !== null ? Number(el.opacity) : undefined,
+        shadows: el.shadows ? el.shadows.map(s => ({
+          x: s.x !== undefined ? Number(s.x) : 4,
+          y: s.y !== undefined ? Number(s.y) : 4,
+          blur: s.blur !== undefined ? Number(s.blur) : 8,
+          color: s.color || '#000000',
+          opacity: s.opacity !== undefined ? Number(s.opacity) : 1
+        })) : undefined,
+        linkPadding: el.linkPadding !== undefined ? !!el.linkPadding : undefined,
+        paddingTop: el.paddingTop !== undefined ? Number(el.paddingTop) : undefined,
+        paddingRight: el.paddingRight !== undefined ? Number(el.paddingRight) : undefined,
+        paddingBottom: el.paddingBottom !== undefined ? Number(el.paddingBottom) : undefined,
+        paddingLeft: el.paddingLeft !== undefined ? Number(el.paddingLeft) : undefined,
+        customId: el.customId !== undefined ? String(el.customId) : undefined,
+        hyperlink: el.hyperlink !== undefined ? String(el.hyperlink) : undefined,
+        hyperlinkTarget: el.hyperlinkTarget !== undefined ? String(el.hyperlinkTarget) : undefined,
+        hyperlinkType: el.hyperlinkType !== undefined ? String(el.hyperlinkType) : undefined,
+        shapeType: el.shapeType !== undefined ? String(el.shapeType) : undefined,
+        customSvgPath: el.customSvgPath !== undefined ? String(el.customSvgPath) : undefined
       };
     });
 
     const statePayload = {
       elements: cleanElements,
       googleFonts: googleFonts || [],
-      backgroundColor: backgroundColor || '#111111'
+      backgroundColor: backgroundColor || '#111111',
+      canvasX: canvasX !== undefined ? Number(canvasX) : 50,
+      horizontalScroll: horizontalScroll !== undefined ? !!horizontalScroll : false
     };
 
     // Save state.json ONLY inside the zineSourceDir (zine-dist) - not inside dist
     fs.writeFileSync(path.join(targetDir2, 'state.json'), JSON.stringify(statePayload, null, 2), 'utf8');
 
     // Compile & write index.html to both (dist gets index.html only, zine-dist gets index.html and state.json)
-    const compiledHtml = compileHtml(statePayload.elements, statePayload.googleFonts, statePayload.backgroundColor);
+    const compiledHtml = compileHtml(
+      statePayload.elements,
+      statePayload.googleFonts,
+      statePayload.backgroundColor,
+      pagePath,
+      statePayload.canvasX,
+      statePayload.horizontalScroll
+    );
     fs.writeFileSync(path.join(targetDir1, 'index.html'), compiledHtml, 'utf8');
     fs.writeFileSync(path.join(targetDir2, 'index.html'), compiledHtml, 'utf8');
 
@@ -529,6 +785,15 @@ app.post('/api/save-page', (req, res) => {
     res.status(500).json({ error: 'Failed to save page', details: err.message });
   }
 });
+
+// Mount Vite middleware for development mode to bundle TS/JS modules seamlessly
+if (process.env.NODE_ENV !== 'production') {
+  const vite = await createViteServer({
+    server: { middlewareMode: true },
+    appType: 'custom',
+  });
+  app.use(vite.middlewares);
+}
 
 // Serve the editor workspace statically under /editor
 app.use('/editor', express.static(editorDir));

@@ -1,4 +1,38 @@
 <!DOCTYPE html>
+<!--
+  =============================================================================
+  MODULE: Zine Engine Visual Studio & Canvas Editor
+  SINGLE RESPONSIBILITY:
+    Provides an interactive, client-side vector/graphic layout publishing engine for digital zines.
+    Manages document element state (text, vector shapes, photos, frames), precise spatial
+    transformations (percentage-based responsive scaling, 3D perspective rotations, matrix skews),
+    rich inline typography editing via decoupled ghost contenteditable overlays, real-time undo/redo
+    history stacks, and asynchronous state serialization to the backend runtime server.
+
+  SYSTEM ARCHITECTURE & DATA FLOW:
+    1. Single Source of Truth (`elements` array):
+       In-memory array storing geometric positions, CSS effects, drop-shadow stacks, and rich HTML text strings.
+    2. Coordinate Space Normalization:
+       Positions (x, y) and dimensions (w, h) are stored as percentages relative to the standard canonical
+       390px mobile viewport width coefficient (`canvasWidth`). This guarantees scale-independent
+       layout persistence across device screens and static publishing targets.
+    3. Rendering Pipeline (`renderCanvas()`):
+       Destructively clears and re-synthesizes DOM nodes inside `#canvas`. Each canvas element is wrapped
+       in an intermediate `.element-blend-wrapper` to support CSS blend modes and ink filter processing
+       without clipping drop-shadows or flattening 3D transform layers.
+    4. Inline Editing Architecture:
+       Double-clicking text elements activates native `contenteditable` directly on the wrapper while
+       a non-blocking `pointer-events: none` ghost overlay handles the marquee bounding box indicator.
+       This prevents CSS outline borders from corrupting native text cursor placement and character highlights.
+    5. State Persistence (`savePageState()`):
+       Serializes canvas layout and metadata to JSON payloads dispatched to `/api/state?page=<route>`.
+
+  KEY CONCEPTS & DEPENDENCIES:
+    - Pure Vanilla DOM & CSS Transforms (Perspective, rotateX/Y, skewX/Y, matrix3d).
+    - HTML5 Selection & Range API for inline character formatting.
+    - Zero external UI framework dependencies (React/Vue/Angular) to enable instant offline execution.
+  =============================================================================
+-->
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -6,6 +40,13 @@
   <title>Zine Engine Editor</title>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Syne:wght@700;800;900&display=swap">
   <style>
+    @keyframes spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+    .animate-spin {
+      animation: spin 1s linear infinite;
+    }
     /* Reset & Theme colors */
     * {
       box-sizing: border-box;
@@ -54,12 +95,12 @@
     #workspace {
       flex-grow: 1;
       height: 100vh;
-      background-color: #202024;
+      background-color: #121214;
       overflow: auto;
       display: flex;
       justify-content: center;
-      align-items: flex-start;
-      padding: 40px;
+      align-items: stretch;
+      padding: 0;
       position: relative;
       transition: background 0.25s ease;
     }
@@ -148,6 +189,11 @@
       background-color: #3f3f46;
       border-color: #52525b;
     }
+    .btn.active {
+      background-color: #3b82f6;
+      border-color: #2563eb;
+      color: white;
+    }
     .btn-primary {
       background-color: #3b82f6;
       border-color: #2563eb;
@@ -199,44 +245,49 @@
     /* The Zine Canvas mimicking standard phone view */
     #canvas-container {
       position: relative;
-      padding: 30px 40px;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
+      display: block;
+      width: 100%;
+      min-height: 100%;
     }
     #canvas {
-      width: 375px; /* standard mobile view */
+      width: 390px; /* Aligned exactly with mobile viewport width coefficient */
       min-height: 667px;
       background-color: transparent !important;
       position: relative;
-      border: 1.5px dashed rgba(255, 255, 255, 0.2);
-      box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.2), 0 20px 50px rgba(0,0,0,0.4);
-      border-radius: 8px;
+      left: calc(var(--canvas-x-pct, 50) * (100% - 390px) / 100);
+      border: none;
+      border-radius: 0;
+      padding: 0 !important;
       overflow: visible;
-      transition: border-color 0.2s ease, box-shadow 0.2s ease;
+      margin-top: 0;
+      margin-bottom: 0;
     }
-    #canvas:hover {
-      border-color: rgba(59, 130, 246, 0.45);
-      box-shadow: 0 0 0 1.5px rgba(59, 130, 246, 0.2), 0 20px 50px rgba(0,0,0,0.5);
-    }
-    
-    /* Ruler / boundary overlay indicators */
-    #canvas::before {
-      content: 'MOBILE WORKSPACE BOUNDS (375PX)';
+
+    /* Mobile boundary guide overlay - anchored to highest level canvas container */
+    .mobile-viewport-guide {
       position: absolute;
-      top: -24px;
-      left: 50%;
-      transform: translateX(-50%);
+      top: 0;
+      left: calc(var(--canvas-x-pct, 50) * (100% - 390px) / 100);
+      width: 390px;
+      height: 100%;
+      border-left: 1px dashed rgba(255, 255, 255, 0.25);
+      border-right: 1px dashed rgba(255, 255, 255, 0.25);
+      pointer-events: none;
+      z-index: 5;
+    }
+    .canvas-size-label {
+      position: absolute;
+      top: 120px;
+      left: calc(100% + 6px);
       font-family: "JetBrains Mono", monospace;
-      font-size: 9px;
-      color: rgba(255, 255, 255, 0.35);
-      letter-spacing: 1.5px;
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.25); /* exact same color as guideline border */
       white-space: nowrap;
       pointer-events: none;
-      transition: color 0.2s ease;
-    }
-    #canvas:hover::before {
-      color: #3b82f6;
+      z-index: 100;
+      transform: rotate(90deg);
+      transform-origin: left top;
+      letter-spacing: 0.05em;
     }
 
     /* Interior elements in the editor */
@@ -275,6 +326,13 @@
       white-space: pre-wrap;
       line-height: 1.2;
     }
+    .element-content-wrapper[contenteditable="true"],
+    .element-content-wrapper[contenteditable="true"]:focus,
+    .element-content-wrapper[contenteditable="true"]:active {
+      outline: none !important;
+      border: none !important;
+      box-shadow: none !important;
+    }
     .editor-element.shape-element svg {
       width: 100%;
       height: 100%;
@@ -296,16 +354,18 @@
       font-style: italic;
     }
 
-    /* Coordinate Indicators overlay */
+    /* Coordinate Indicators overlay - placed over canvas with no margin impact */
     .coords-indicator {
       position: absolute;
-      bottom: -24px;
+      bottom: 12px;
       left: 50%;
       transform: translateX(-50%);
       font-family: "JetBrains Mono", monospace;
       font-size: 10px;
-      color: #71717a;
+      color: rgba(255, 255, 255, 0.25);
       white-space: nowrap;
+      pointer-events: none;
+      z-index: 100;
     }
 
     /* Slider Container */
@@ -330,12 +390,11 @@
       width: 100%;
       height: 100%;
       pointer-events: none;
-      border: 1px solid rgba(59, 130, 246, 0.05);
     }
 
     /* Floating Context Menu */
     #context-menu {
-      position: absolute;
+      position: fixed;
       background: #18181b;
       border: 1px solid #3f3f46;
       box-shadow: 0 10px 25px -5px rgba(0,0,0,0.5), 0 8px 10px -6px rgba(0,0,0,0.5);
@@ -443,17 +502,7 @@
 
     /* Floating Quick action toolbar above selected element */
     #floating-quickbar {
-      position: absolute;
-      background: #18181b;
-      border: 1px solid #27272a;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.4);
-      border-radius: 8px;
-      padding: 4px;
-      display: none;
-      align-items: center;
-      gap: 4px;
-      z-index: 998;
-      pointer-events: auto;
+      display: none !important;
     }
     .quickbar-btn {
       width: 28px;
@@ -481,6 +530,27 @@
       height: 18px;
       background: #27272a;
       margin: 0 4px;
+    }
+    .rich-btn {
+      width: 28px;
+      height: 28px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 4px;
+      color: #a1a1aa;
+      cursor: pointer;
+      background: transparent;
+      border: none;
+      transition: all 0.15s ease;
+    }
+    .rich-btn:hover {
+      background: #27272a;
+      color: #ffffff;
+    }
+    .rich-btn.active {
+      background: #3b82f6;
+      color: #ffffff;
     }
 
     /* Custom range styling */
@@ -512,6 +582,15 @@
       50% { transform: scale(1.1); opacity: 1; }
       100% { transform: scale(0.95); opacity: 0.5; }
     }
+
+    .rotate-handle {
+      transition: transform 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease;
+    }
+    .rotate-handle:hover {
+      transform: scale(1.4) !important;
+      background-color: #3b82f6 !important;
+      box-shadow: 0 0 8px rgba(59, 130, 246, 0.8);
+    }
   </style>
   <div id="fonts-injection"></div>
 </head>
@@ -539,10 +618,26 @@
       <label class="form-label" for="pageSelect">ACTIVE PAGE</label>
       <select id="pageSelect"></select>
     </div>
-    <button class="btn btn-full" id="addPageBtn" style="margin-bottom: 16px;">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-      + New Page / Subpage
-    </button>
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px;">
+      <button class="btn" id="addPageBtn" style="width: 100%; font-size: 11px; padding: 8px 4px;">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+        + New Page
+      </button>
+      <button class="btn" id="duplicatePageBtn" style="width: 100%; font-size: 11px; padding: 8px 4px;">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+        Duplicate Page
+      </button>
+    </div>
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 16px;">
+      <button class="btn" id="undoBtn" title="Undo (Ctrl+Z)" disabled style="width: 100%; font-size: 11px; padding: 8px 4px; opacity: 0.5; pointer-events: none;">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/></svg>
+        Undo
+      </button>
+      <button class="btn" id="redoBtn" title="Redo (Ctrl+Y)" disabled style="width: 100%; font-size: 11px; padding: 8px 4px; opacity: 0.5; pointer-events: none;">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 7v6h-6"/><path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3l3 2.7"/></svg>
+        Redo
+      </button>
+    </div>
 
     <!-- Global Canvas Specs -->
     <div class="section-title">Global Canvas Settings</div>
@@ -551,6 +646,8 @@
       <select id="bgFillType" style="margin-bottom: 8px;">
         <option value="solid">Solid Color</option>
         <option value="gradient">Linear Gradient</option>
+        <option value="radial-gradient">Radial Gradient</option>
+        <option value="image">Image Background</option>
       </select>
       
       <!-- Solid background fields -->
@@ -563,11 +660,66 @@
 
       <!-- Gradient background fields -->
       <div id="bgGradientGroup" style="display: none;">
-        <label class="form-label">GRADIENT ANGLE (deg)</label>
-        <input type="range" id="bgGradAngle" min="0" max="360" value="45" style="margin-bottom: 8px;">
+        <div id="bgGradAngleWrapper">
+          <label class="form-label">GRADIENT ANGLE (deg)</label>
+          <input type="range" id="bgGradAngle" min="0" max="360" value="45" style="margin-bottom: 8px;">
+        </div>
         <div class="input-row">
           <input type="color" id="bgGradStart" style="height: 36px; padding: 2px; cursor: pointer;" value="#111111">
           <input type="color" id="bgGradEnd" style="height: 36px; padding: 2px; cursor: pointer;" value="#222225">
+        </div>
+      </div>
+
+      <!-- Image background fields -->
+      <div id="bgImageGroup" style="display: none;">
+        <label class="form-label">IMAGE SOURCE URL</label>
+        <div class="input-row" style="margin-bottom: 8px;">
+          <input type="text" id="bgImageInput" placeholder="Paste image URL..." style="flex-grow: 1;">
+          <button class="btn" id="bgImageUploadBtn" style="padding: 0 12px;" title="Upload Image" type="button">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+          </button>
+        </div>
+        <label class="form-label">BACKGROUND FIT</label>
+        <select id="bgImageMode">
+          <option value="cover">Cover (Aspect Fill)</option>
+          <option value="contain">Contain (Aspect Fit)</option>
+          <option value="stretch">Stretch (Fill Canvas)</option>
+          <option value="tile">Tile (Repeat)</option>
+        </select>
+      </div>
+
+      <!-- Workspace dots toggle -->
+      <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 12px; border-top: 1px solid #27272a; padding-top: 12px;">
+        <label class="form-label" style="margin-bottom: 0;">WORKSPACE DOT GRID</label>
+        <input type="checkbox" id="toggleDots" style="width: auto; cursor: pointer;" checked>
+      </div>
+
+      <!-- Guideline Alignment & Canvas Offset Controls -->
+      <div style="border-top: 1px solid #27272a; padding-top: 12px; margin-top: 12px;">
+        <label class="form-label" style="font-weight: 600; color: #f4f4f5; margin-bottom: 8px;">CANVAS VIEWPORT ALIGNMENT</label>
+        
+        <!-- Preset anchors -->
+        <div class="btn-group" style="grid-template-columns: repeat(3, 1fr); gap: 4px; margin-bottom: 8px;">
+          <button class="btn" id="alignCanvasLeft" style="padding: 6px 2px; font-size: 10px;" type="button">Left</button>
+          <button class="btn active" id="alignCanvasCenter" style="padding: 6px 2px; font-size: 10px;" type="button">Center</button>
+          <button class="btn" id="alignCanvasRight" style="padding: 6px 2px; font-size: 10px;" type="button">Right</button>
+        </div>
+
+        <!-- Custom slider horizontal offset -->
+        <div class="form-group" style="margin-bottom: 8px;">
+          <label class="form-label" style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+            <span>HORIZONTAL OFFSET</span>
+            <span id="canvasXVal" style="color: #a1a1aa; font-family: monospace;">50%</span>
+          </label>
+          <div class="slider-row" style="display: flex; align-items: center; gap: 8px;">
+            <input type="range" id="canvasXSlider" min="0" max="100" value="50" style="flex-grow: 1; cursor: pointer;">
+          </div>
+        </div>
+
+        <!-- Enable Horizontal Scroll toggle -->
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 8px; border-top: 1px dashed #27272a; padding-top: 8px;">
+          <label class="form-label" style="margin-bottom: 0;">ENABLE HORIZONTAL SCROLL</label>
+          <input type="checkbox" id="toggleHorizScroll" style="width: auto; cursor: pointer;">
         </div>
       </div>
     </div>
@@ -628,6 +780,14 @@
           </div>
         </div>
 
+        <div class="form-group">
+          <label class="form-label">OPACITY LEVEL (0-100%)</label>
+          <div class="slider-row">
+            <input type="range" id="propOpacity" min="0" max="100" step="1" value="100">
+            <span class="slider-val" id="propOpacityVal">100%</span>
+          </div>
+        </div>
+
         <!-- Transformations Section -->
         <div class="form-group" style="border-top: 1px solid #27272a; padding-top: 12px; margin-top: 12px;">
           <label class="form-label" style="font-weight: 600; color: #f4f4f5;">ADVANCED TRANSFORMS</label>
@@ -679,6 +839,8 @@
           <select id="propFillType" style="margin-bottom: 8px;">
             <option value="solid">Solid Color Fill</option>
             <option value="gradient">Linear Gradient Fill</option>
+            <option value="radial-gradient">Radial Gradient Fill</option>
+            <option value="image">Image Background Fill</option>
           </select>
 
           <!-- Solid Group -->
@@ -692,12 +854,32 @@
 
           <!-- Gradient Group -->
           <div id="propGradientGroup" style="display: none;">
-            <label class="form-label">GRADIENT ANGLE (deg)</label>
-            <input type="range" id="propGradAngle" min="0" max="360" value="45" style="margin-bottom: 8px;">
+            <div id="propGradAngleWrapper">
+              <label class="form-label">GRADIENT ANGLE (deg)</label>
+              <input type="range" id="propGradAngle" min="0" max="360" value="45" style="margin-bottom: 8px;">
+            </div>
             <div class="input-row">
               <input type="color" id="propGradStart" style="height: 36px; padding: 2px; cursor: pointer;">
               <input type="color" id="propGradEnd" style="height: 36px; padding: 2px; cursor: pointer;">
             </div>
+          </div>
+
+          <!-- Image Fill Group for shapes & text -->
+          <div id="propImageGroup" style="display: none;">
+            <label class="form-label">IMAGE FILL SOURCE URL</label>
+            <div class="input-row" style="margin-bottom: 8px;">
+              <input type="text" id="propBgImageInput" placeholder="Paste image URL..." style="flex-grow: 1;">
+              <button class="btn" id="propBgImageUploadBtn" style="padding: 0 12px;" title="Upload Image" type="button">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+              </button>
+            </div>
+            <label class="form-label">BACKGROUND FIT</label>
+            <select id="propBgImageMode" style="margin-bottom: 8px;">
+              <option value="cover">Cover (Aspect Fill)</option>
+              <option value="contain">Contain (Aspect Fit)</option>
+              <option value="stretch">Stretch (Fill Shape)</option>
+              <option value="tile">Tile (Repeat)</option>
+            </select>
           </div>
         </div>
 
@@ -755,6 +937,60 @@
               <button class="btn" id="alignCenter" title="Center">C</button>
               <button class="btn" id="alignRight" title="Right">R</button>
               <button class="btn" id="alignJustify" title="Justify">J</button>
+            </div>
+          </div>
+
+          <div class="form-group" style="margin-top: 12px; border-top: 1px dashed #27272a; padding-top: 12px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+              <label class="form-label" style="margin-bottom: 0;">TEXT PADDING</label>
+              <label style="display: flex; align-items: center; gap: 4px; font-size: 10px; color: #a1a1aa; cursor: pointer;">
+                <input type="checkbox" id="propLinkPadding" checked style="cursor: pointer;">
+                Link Sides
+              </label>
+            </div>
+            
+            <!-- Linked padding controls (Single slider) -->
+            <div id="propLinkedPaddingGroup">
+              <div class="slider-row">
+                <input type="range" id="propPaddingAll" min="0" max="20" step="0.5" value="0" style="width: 100%;">
+                <span class="slider-val" id="propPaddingAllVal">0</span>
+              </div>
+            </div>
+            
+            <!-- Individual padding controls (4 sliders in a 2x2 grid) -->
+            <div id="propIndividualPaddingGroup" style="display: none; gap: 8px; flex-direction: column;">
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                <div>
+                  <label class="form-label" style="font-size: 9px; color: #71717a; margin-bottom: 2px;">TOP</label>
+                  <div class="slider-row" style="gap: 4px;">
+                    <input type="range" id="propPaddingTop" min="0" max="20" step="0.5" value="0" style="width: 100%;">
+                    <span class="slider-val" id="propPaddingTopVal" style="font-size: 9px; min-width: 18px;">0</span>
+                  </div>
+                </div>
+                <div>
+                  <label class="form-label" style="font-size: 9px; color: #71717a; margin-bottom: 2px;">RIGHT</label>
+                  <div class="slider-row" style="gap: 4px;">
+                    <input type="range" id="propPaddingRight" min="0" max="20" step="0.5" value="0" style="width: 100%;">
+                    <span class="slider-val" id="propPaddingRightVal" style="font-size: 9px; min-width: 18px;">0</span>
+                  </div>
+                </div>
+              </div>
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                <div>
+                  <label class="form-label" style="font-size: 9px; color: #71717a; margin-bottom: 2px;">BOTTOM</label>
+                  <div class="slider-row" style="gap: 4px;">
+                    <input type="range" id="propPaddingBottom" min="0" max="20" step="0.5" value="0" style="width: 100%;">
+                    <span class="slider-val" id="propPaddingBottomVal" style="font-size: 9px; min-width: 18px;">0</span>
+                  </div>
+                </div>
+                <div>
+                  <label class="form-label" style="font-size: 9px; color: #71717a; margin-bottom: 2px;">LEFT</label>
+                  <div class="slider-row" style="gap: 4px;">
+                    <input type="range" id="propPaddingLeft" min="0" max="20" step="0.5" value="0" style="width: 100%;">
+                    <span class="slider-val" id="propPaddingLeftVal" style="font-size: 9px; min-width: 18px;">0</span>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -854,35 +1090,70 @@
         <!-- Universal Drop Shadow Controls -->
         <div class="form-group" style="border-top: 1px solid #27272a; padding-top: 12px; margin-top: 12px;">
           <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
-            <label class="form-label" style="font-weight: 600; color: #f4f4f5; margin-bottom: 0;">DROP SHADOW EFFECTS</label>
+            <label class="form-label" style="font-weight: 600; color: #f4f4f5; margin-bottom: 0;">STACKING DROP SHADOWS</label>
             <input type="checkbox" id="propShadowEnable" style="width: auto; cursor: pointer; margin-left: 8px;">
           </div>
 
           <div id="shadowControlsGroup" style="display: none;">
-            <div style="margin-bottom: 8px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; align-items: center;">
-              <div>
-                <span style="font-size: 10px; color: #a1a1aa;">SHADOW COLOR</span>
-                <input type="color" id="propShadowColor" style="height: 36px; padding: 2px; width: 100%; border: none; background: transparent; cursor: pointer;" value="#000000">
-              </div>
-              <div>
-                <span style="font-size: 10px; color: #a1a1aa;">BLUR RADIUS</span>
-                <div class="slider-row">
-                  <input type="range" id="propShadowBlur" min="0" max="30" step="1" value="8" style="flex-grow: 1;">
-                  <span class="slider-val" id="propShadowBlurVal" style="font-size: 10px;">8px</span>
-                </div>
-              </div>
-            </div>
+            <div id="shadowListContainer" style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px;"></div>
+            <button class="btn btn-full" id="addShadowBtn" type="button" style="font-size: 11px; padding: 6px 8px; margin-top: 4px;">
+              + Add Shadow Layer
+            </button>
+          </div>
+        </div>
 
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
-              <div>
-                <span style="font-size: 10px; color: #a1a1aa;">OFFSET X</span>
-                <input type="number" id="propShadowX" value="4" step="1" style="background-color: #18181b; border: 1px solid #27272a; padding: 4px; border-radius: 4px; color: white; width: 100%;">
-              </div>
-              <div>
-                <span style="font-size: 10px; color: #a1a1aa;">OFFSET Y</span>
-                <input type="number" id="propShadowY" value="4" step="1" style="background-color: #18181b; border: 1px solid #27272a; padding: 4px; border-radius: 4px; color: white; width: 100%;">
-              </div>
+        <!-- Hyperlink & Anchor ID Controls -->
+        <div class="form-group" style="border-top: 1px solid #27272a; padding-top: 12px; margin-top: 12px;">
+          <label class="form-label" style="font-weight: 600; color: #f4f4f5;">HYPERLINK & ANCHOR ID</label>
+          
+          <div style="margin-bottom: 8px;">
+            <label class="form-label" for="propCustomId" style="font-size: 10px; color: #a1a1aa;">ELEMENT ANCHOR ID</label>
+            <input type="text" id="propCustomId" placeholder="e.g. contact-section" style="font-family: monospace;">
+          </div>
+
+          <div style="margin-bottom: 8px;">
+            <label class="form-label" for="propHyperlinkType" style="font-size: 10px; color: #a1a1aa;">LINK TYPE</label>
+            <select id="propHyperlinkType" style="margin-bottom: 8px;">
+              <option value="none">No Link</option>
+              <option value="page">Page within Publication</option>
+              <option value="anchor">Anchor on Page</option>
+              <option value="external">External Website or File</option>
+            </select>
+          </div>
+
+          <!-- Page Selection Group -->
+          <div id="propLinkPageGroup" style="display: none; margin-bottom: 8px;">
+            <label class="form-label" style="font-size: 10px; color: #a1a1aa;">SELECT PAGE</label>
+            <div style="position: relative; margin-bottom: 6px;">
+              <input type="text" id="propLinkPageSearch" placeholder="Search pages..." style="font-size: 11px; margin-bottom: 4px;">
             </div>
+            <select id="propLinkPageSelect" size="4" style="height: 100px; font-family: monospace; font-size: 11px;"></select>
+          </div>
+
+          <!-- Anchor Input Group -->
+          <div id="propLinkAnchorGroup" style="display: none; margin-bottom: 8px;">
+            <label class="form-label" style="font-size: 10px; color: #a1a1aa;">SELECT OR TYPE ANCHOR ID</label>
+            <div style="position: relative; margin-bottom: 6px;">
+              <select id="propLinkAnchorSelect" style="margin-bottom: 4px; font-family: monospace; font-size: 11px;">
+                <option value="">-- Choose existing ID --</option>
+              </select>
+            </div>
+            <input type="text" id="propLinkAnchorInput" placeholder="Or type custom (e.g. #contact)">
+          </div>
+
+          <!-- External URL Group -->
+          <div id="propLinkExternalGroup" style="display: none; margin-bottom: 8px;">
+            <label class="form-label" for="propLinkExternalInput" style="font-size: 10px; color: #a1a1aa;">URL / EMAIL / PHONE / FILE</label>
+            <input type="text" id="propLinkExternalInput" placeholder="e.g. https://google.com, mailto:foo@bar.com">
+          </div>
+
+          <!-- Target Selection -->
+          <div id="propLinkTargetGroup" style="display: none;">
+            <label class="form-label" for="propLinkTarget" style="font-size: 10px; color: #a1a1aa;">OPEN BEHAVIOR</label>
+            <select id="propLinkTarget">
+              <option value="_self">Open in same tab / screen</option>
+              <option value="_blank">Open in new tab (_blank)</option>
+            </select>
           </div>
         </div>
 
@@ -904,23 +1175,29 @@
     </div>
 
     <!-- Footer Save Control -->
-    <div style="margin-top: auto; padding-top: 24px;">
+    <div style="margin-top: auto; padding-top: 24px; display: flex; flex-direction: column; gap: 8px;">
       <button class="btn btn-primary btn-full" id="saveBtn" style="padding: 12px 16px; font-weight: 600;">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
         PUBLISH CHANGES
       </button>
-      <div id="saveFeedback" style="text-align: center; font-size: 11px; margin-top: 8px; color: #a1a1aa;"></div>
+      <button class="btn btn-secondary btn-full" id="exportHtmlBtn" style="padding: 10px 16px; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 6px; background: #27272a; color: #f4f4f5; border: 1px solid #3f3f46; border-radius: 6px; cursor: pointer;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+        EXPORT STANDALONE HTML
+      </button>
+      <div id="saveFeedback" style="text-align: center; font-size: 11px; margin-top: 4px; color: #a1a1aa;"></div>
     </div>
   </aside>
 
   <!-- RIGHT SPATIAL WORKSPACE -->
   <main id="workspace">
     <div id="canvas-container">
+      <div class="mobile-viewport-guide">
+        <div class="canvas-size-label" id="canvas-height-info">Canvas size: 375 x 667px (Aspect-locked scale)</div>
+      </div>
       <div id="canvas">
         <div class="canvas-margin-guides"></div>
         <!-- Rendered elements go here -->
       </div>
-      <div class="coords-indicator" id="canvas-height-info">Smartphone canvas (375px wide)</div>
     </div>
   </main>
 
@@ -952,25 +1229,94 @@
     </button>
   </div>
 
+  <!-- TEXT FORMATTING QUICKBAR (Shown only when text is highlighted/selected inside active text editing element) -->
+  <div id="text-formatting-quickbar" style="display: none; position: absolute; background: #18181b; border: 1px solid #3f3f46; border-radius: 8px; padding: 6px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.5); z-index: 1000; align-items: center; gap: 5px; backdrop-filter: blur(12px);">
+    <!-- Bold -->
+    <button class="rich-btn" id="rich-bold" title="Bold (Ctrl+B)" style="font-weight: 800; font-size: 13px; width: 28px; height: 28px; background: transparent; border: none; color: #fff; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.2s;">B</button>
+    <!-- Italic -->
+    <button class="rich-btn" id="rich-italic" title="Italic (Ctrl+I)" style="font-style: italic; font-size: 13px; width: 28px; height: 28px; background: transparent; border: none; color: #fff; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.2s;">I</button>
+    <!-- Underline -->
+    <button class="rich-btn" id="rich-underline" title="Underline (Ctrl+U)" style="text-decoration: underline; font-size: 13px; width: 28px; height: 28px; background: transparent; border: none; color: #fff; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.2s;">U</button>
+    <!-- Strike -->
+    <button class="rich-btn" id="rich-strike" title="Strikethrough" style="text-decoration: line-through; font-size: 13px; width: 28px; height: 28px; background: transparent; border: none; color: #fff; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.2s;">S</button>
+    <div style="width: 1px; height: 18px; background: #3f3f46; margin: 0 2px;"></div>
+    <!-- Superscript -->
+    <button class="rich-btn" id="rich-super" title="Superscript" style="font-size: 11px; width: 28px; height: 28px; background: transparent; border: none; color: #fff; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.2s;">x<sup>2</sup></button>
+    <!-- Subscript -->
+    <button class="rich-btn" id="rich-sub" title="Subscript" style="font-size: 11px; width: 28px; height: 28px; background: transparent; border: none; color: #fff; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.2s;">x<sub>2</sub></button>
+    <div style="width: 1px; height: 18px; background: #3f3f46; margin: 0 2px;"></div>
+    <!-- Per-character font selection! -->
+    <select id="rich-font-family" style="background: #27272a; border: 1px solid #3f3f46; color: #fff; font-size: 11px; padding: 2px 4px; border-radius: 4px; max-width: 95px; outline: none; cursor: pointer; height: 28px;">
+      <option value="">Font...</option>
+      <option value="Inter">Inter</option>
+      <option value="Space Grotesk">Space Grotesk</option>
+      <option value="Outfit">Outfit</option>
+      <option value="Playfair Display">Playfair Display</option>
+      <option value="JetBrains Mono">JetBrains Mono</option>
+      <option value="Fira Code">Fira Code</option>
+      <option value="Cinzel">Cinzel</option>
+      <option value="Bebas Neue">Bebas Neue</option>
+      <option value="Syne">Syne</option>
+    </select>
+    <!-- Font Size input for character! -->
+    <input type="number" id="rich-font-size" placeholder="Size" style="background: #27272a; border: 1px solid #3f3f46; color: #fff; font-size: 11px; padding: 2px 4px; border-radius: 4px; width: 48px; text-align: center; outline: none; height: 28px;" title="Selected Character Font Size (px)">
+    <!-- Letter spacing (kerning) for character! -->
+    <input type="number" id="rich-letter-spacing" placeholder="Kern" step="0.5" style="background: #27272a; border: 1px solid #3f3f46; color: #fff; font-size: 11px; padding: 2px 4px; border-radius: 4px; width: 48px; text-align: center; outline: none; height: 28px;" title="Selected Character Letter Spacing (px)">
+    <div style="width: 1px; height: 18px; background: #3f3f46; margin: 0 2px;"></div>
+    
+    <!-- Character Fill Type (Solid, Linear, Radial) -->
+    <select id="rich-fill-type" style="background: #27272a; border: 1px solid #3f3f46; color: #fff; font-size: 11px; padding: 2px 4px; border-radius: 4px; outline: none; cursor: pointer; height: 28px; max-width: 65px;" title="Character Fill Type">
+      <option value="solid">Solid</option>
+      <option value="linear">Linear</option>
+      <option value="radial">Radial</option>
+    </select>
+
+    <!-- Solid Color picker button -->
+    <input type="color" id="rich-color" style="width: 28px; height: 28px; border: 1px solid #3f3f46; padding: 0; background: transparent; cursor: pointer; border-radius: 4px; overflow: hidden; outline: none;" title="Character Color">
+
+    <!-- Gradient controls -->
+    <div id="rich-gradient-controls" style="display: none; align-items: center; gap: 4px;">
+      <input type="color" id="rich-grad-start" value="#ff007f" style="width: 24px; height: 24px; border: 1px solid #3f3f46; padding: 0; background: transparent; cursor: pointer; border-radius: 4px; overflow: hidden; outline: none;" title="Gradient Start">
+      <input type="color" id="rich-grad-end" value="#7f00ff" style="width: 24px; height: 24px; border: 1px solid #3f3f46; padding: 0; background: transparent; cursor: pointer; border-radius: 4px; overflow: hidden; outline: none;" title="Gradient End">
+      <input type="number" id="rich-grad-angle" value="45" style="background: #27272a; border: 1px solid #3f3f46; color: #fff; font-size: 11px; padding: 2px; border-radius: 4px; width: 40px; text-align: center; outline: none; height: 28px;" title="Gradient Angle" placeholder="Angle">
+    </div>
+
+    <div style="width: 1px; height: 18px; background: #3f3f46; margin: 0 2px;"></div>
+    <button class="rich-btn" id="menu-rich-clear" title="Clear Style" style="color: #f87171; width: 28px; height: 28px; background: transparent; border: none; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.2s;">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
+    </button>
+  </div>
+
   <!-- FLOATING CONTEXT MENU -->
   <div id="context-menu">
     <div class="menu-item" id="menu-bring-forward">
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 11 12 6 7 11"></polyline><polyline points="17 18 12 13 7 18"></polyline></svg>
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 11 12 6 7 11"></polyline></svg>
       Bring Forward
     </div>
+    <div class="menu-item" id="menu-bring-front">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 11 12 6 7 11"></polyline><polyline points="17 18 12 13 7 18"></polyline></svg>
+      Bring to Front (Top)
+    </div>
     <div class="menu-item" id="menu-send-backward">
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="7 13 12 18 17 13"></polyline><polyline points="7 6 12 11 17 6"></polyline></svg>
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="7 13 12 18 17 13"></polyline></svg>
       Send Backward
     </div>
+    <div class="menu-item" id="menu-send-back">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="7 13 12 18 17 13"></polyline><polyline points="7 6 12 11 17 6"></polyline></svg>
+      Send to Back (Bottom)
+    </div>
     <div class="menu-divider"></div>
-    <div class="menu-item" id="menu-rotate-ccw">Rotate -15°</div>
-    <div class="menu-item" id="menu-rotate-cw">Rotate +15°</div>
     <div class="menu-item" id="menu-stretch-wider">Stretch Wider (+10%)</div>
     <div class="menu-item" id="menu-stretch-narrower">Shrink Narrower (-10%)</div>
     <div class="menu-divider"></div>
     <div class="menu-item" id="menu-edit-floating">
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4z"></path></svg>
       Direct Tuning Popup
+    </div>
+
+    <div class="menu-item" id="menu-duplicate">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+      Duplicate Element (Ctrl+D)
     </div>
     <div class="menu-divider"></div>
     <div class="menu-item danger" id="menu-delete">
@@ -1021,6 +1367,7 @@
           <select id="floatFillType">
             <option value="solid">Solid Color</option>
             <option value="gradient">Linear Gradient</option>
+            <option value="radial-gradient">Radial Gradient</option>
           </select>
         </div>
         <!-- Solid Color Field -->
@@ -1034,8 +1381,10 @@
         <!-- Gradient Fields -->
         <div id="floatGradientGroup" style="display:none;">
           <div class="form-group">
-            <label class="form-label">Gradient Angle & Colors</label>
-            <input type="range" id="floatGradAngle" min="0" max="360" step="1" style="margin-bottom:8px;">
+            <div id="floatGradAngleWrapper">
+              <label class="form-label">Gradient Angle & Colors</label>
+              <input type="range" id="floatGradAngle" min="0" max="360" step="1" style="margin-bottom:8px;">
+            </div>
             <div class="input-row">
               <input type="color" id="floatGradStart" style="height:34px; padding:2px;">
               <input type="color" id="floatGradEnd" style="height:34px; padding:2px;">
@@ -1082,2190 +1431,7 @@
   <!-- Hidden elements -->
   <input type="file" id="fileUploader" accept="image/*" style="display: none;">
 
-  <!-- Editor Logic -->
-  <script>
-    const canvasWidth = 375; // Locked mobile resolution width coefficient
-
-    // Editor state
-    let activePage = '/';
-    let elements = [];
-    let googleFonts = ['Syne'];
-    let backgroundColor = '#111111';
-    let activeElementIndex = null;
-    let selectedIndices = []; // Multi-selection indices tracker
-    let isUnsaved = false;
-    let lastClickTime = 0;
-    let lastClickIdx = null;
-
-    // Helper to start inline contenteditable editing on a text element
-    function startInlineEditing(idx) {
-      const el = elements[idx];
-      if (!el || el.type !== 'text') return;
-      
-      const div = canvas.querySelector(`.editor-element[data-index="${idx}"]`);
-      if (!div) return;
-      
-      div.contentEditable = 'true';
-      div.focus();
-      
-      // Place cursor at the end of the text
-      const range = document.createRange();
-      const sel = window.getSelection();
-      range.selectNodeContents(div);
-      range.collapse(false);
-      sel.removeAllRanges();
-      sel.addRange(range);
-    }
-
-    // Handles logical double click on any zine element
-    function triggerDoubleClickAction(idx, clientX, clientY) {
-      const el = elements[idx];
-      if (!el) return;
-      if (el.type === 'text') {
-        startInlineEditing(idx);
-      } else {
-        showFloatingInspector(idx, clientX, clientY);
-      }
-    }
-
-    // DOM Elements
-    const pageSelect = document.getElementById('pageSelect');
-    const addPageBtn = document.getElementById('addPageBtn');
-    
-    // Background Fill controls
-    const bgFillType = document.getElementById('bgFillType');
-    const bgSolidGroup = document.getElementById('bgSolidGroup');
-    const bgGradientGroup = document.getElementById('bgGradientGroup');
-    const bgColor = document.getElementById('bgColor');
-    const bgColorText = document.getElementById('bgColorText');
-    const bgGradAngle = document.getElementById('bgGradAngle');
-    const bgGradStart = document.getElementById('bgGradStart');
-    const bgGradEnd = document.getElementById('bgGradEnd');
-
-    const addTextBtn = document.getElementById('addTextBtn');
-    const addImageBtn = document.getElementById('addImageBtn');
-    const addShapeBtn = document.getElementById('addShapeBtn');
-    const fileUploader = document.getElementById('fileUploader');
-    const externalImageInput = document.getElementById('externalImageInput');
-    const canvas = document.getElementById('canvas');
-    const propertiesPlaceholder = document.getElementById('propertiesPlaceholder');
-    const propertiesPanel = document.getElementById('propertiesPanel');
-    const textOnlyProps = document.getElementById('textOnlyProps');
-    const shapeOnlyProps = document.getElementById('shapeOnlyProps');
-    const shapeHeightProp = document.getElementById('shapeHeightProp');
-    
-    // Properties Inputs
-    const propX = document.getElementById('propX');
-    const propY = document.getElementById('propY');
-    const propW = document.getElementById('propW');
-    const propWVal = document.getElementById('propWVal');
-    const propH = document.getElementById('propH');
-    const propHVal = document.getElementById('propHVal');
-
-    // Transform inputs
-    const propRotate = document.getElementById('propRotate');
-    const propRotateVal = document.getElementById('propRotateVal');
-    const propRotateX = document.getElementById('propRotateX');
-    const propRotateXVal = document.getElementById('propRotateXVal');
-    const propRotateY = document.getElementById('propRotateY');
-    const propRotateYVal = document.getElementById('propRotateYVal');
-    const propSkewX = document.getElementById('propSkewX');
-    const propSkewXVal = document.getElementById('propSkewXVal');
-    const propSkewY = document.getElementById('propSkewY');
-    const propSkewYVal = document.getElementById('propSkewYVal');
-
-    // Fill & Gradient properties
-    const propFillType = document.getElementById('propFillType');
-    const propSolidGroup = document.getElementById('propSolidGroup');
-    const propGradientGroup = document.getElementById('propGradientGroup');
-    const propColor = document.getElementById('propColor');
-    const propColorText = document.getElementById('propColorText');
-    const propGradAngle = document.getElementById('propGradAngle');
-    const propGradStart = document.getElementById('propGradStart');
-    const propGradEnd = document.getElementById('propGradEnd');
-
-    // Typography
-    const propS = document.getElementById('propS');
-    const propSVal = document.getElementById('propSVal');
-    const propFont = document.getElementById('propFont');
-    const propText = document.getElementById('propText');
-    const propBlend = document.getElementById('propBlend');
-    const alignLeft = document.getElementById('alignLeft');
-    const alignCenter = document.getElementById('alignCenter');
-    const alignRight = document.getElementById('alignRight');
-    const alignJustify = document.getElementById('alignJustify');
-
-    // Shapes Properties
-    const propShapeType = document.getElementById('propShapeType');
-    const propBorderRadius = document.getElementById('propBorderRadius');
-    const propBorderRadiusVal = document.getElementById('propBorderRadiusVal');
-    const propStrokeColor = document.getElementById('propStrokeColor');
-    const propStrokeWidth = document.getElementById('propStrokeWidth');
-    const propStrokeWidthVal = document.getElementById('propStrokeWidthVal');
-    const customSvgPathGroup = document.getElementById('customSvgPathGroup');
-    const propSvgPresets = document.getElementById('propSvgPresets');
-    const propCustomSvgPath = document.getElementById('propCustomSvgPath');
-
-    const deleteElementBtn = document.getElementById('deleteElementBtn');
-    const saveBtn = document.getElementById('saveBtn');
-    const saveFeedback = document.getElementById('saveFeedback');
-    const canvasHeightInfo = document.getElementById('canvas-height-info');
-    
-    // Tracking & Leading
-    const propTracking = document.getElementById('propTracking');
-    const propTrackingVal = document.getElementById('propTrackingVal');
-    const propLeading = document.getElementById('propLeading');
-    const propLeadingVal = document.getElementById('propLeadingVal');
-
-    // Borders & Element Radius
-    const propBorderWidth = document.getElementById('propBorderWidth');
-    const propBorderWidthVal = document.getElementById('propBorderWidthVal');
-    const propBorderStyle = document.getElementById('propBorderStyle');
-    const propBorderColor = document.getElementById('propBorderColor');
-    const propElementBorderRadius = document.getElementById('propElementBorderRadius');
-    const propElementBorderRadiusVal = document.getElementById('propElementBorderRadiusVal');
-
-    // Shadows
-    const propShadowEnable = document.getElementById('propShadowEnable');
-    const shadowControlsGroup = document.getElementById('shadowControlsGroup');
-    const propShadowColor = document.getElementById('propShadowColor');
-    const propShadowBlur = document.getElementById('propShadowBlur');
-    const propShadowBlurVal = document.getElementById('propShadowBlurVal');
-    const propShadowX = document.getElementById('propShadowX');
-    const propShadowY = document.getElementById('propShadowY');
-
-    // FLOATING UI ELEMENTS
-    const quickbar = document.getElementById('floating-quickbar');
-    const contextMenu = document.getElementById('context-menu');
-    const inspector = document.getElementById('floating-inspector');
-    const inspectorHeader = document.getElementById('floating-inspector-header');
-
-    // FLOATING INSPECTOR FIELD BINDINGS
-    const floatX = document.getElementById('floatX');
-    const floatY = document.getElementById('floatY');
-    const floatW = document.getElementById('floatW');
-    const floatH = document.getElementById('floatH');
-    const floatText = document.getElementById('floatText');
-    const floatFillType = document.getElementById('floatFillType');
-    const floatSolidGroup = document.getElementById('floatSolidGroup');
-    const floatColorPicker = document.getElementById('floatColorPicker');
-    const floatColorText = document.getElementById('floatColorText');
-    const floatGradientGroup = document.getElementById('floatGradientGroup');
-    const floatGradAngle = document.getElementById('floatGradAngle');
-    const floatGradStart = document.getElementById('floatGradStart');
-    const floatGradEnd = document.getElementById('floatGradEnd');
-    const floatBlend = document.getElementById('floatBlend');
-    
-    const floatRotate = document.getElementById('floatRotate');
-    const floatRotateX = document.getElementById('floatRotateX');
-    const floatRotateY = document.getElementById('floatRotateY');
-    const floatSkewX = document.getElementById('floatSkewX');
-    const floatSkewY = document.getElementById('floatSkewY');
-
-    const fontFamilies = [
-      'Inter', 'Syne', 'Rubik Beastly', 'Eater', 'JetBrains Mono', 'Space Grotesk', 'Cinzel', 'VT323'
-    ];
-
-    // VECTOR PATH PRESETS DEFINITION
-    const pathPresets = {
-      wave: 'M 0,50 Q 25,20 50,50 T 100,50 L 100,100 L 0,100 Z',
-      blob: 'M25,20 C40,10 65,15 75,30 C85,45 80,70 60,80 C40,90 15,80 15,55 C15,30 10,30 25,20 Z',
-      sparkle: 'M 50,0 Q 50,50 100,50 Q 50,50 50,100 Q 50,50 0,50 Q 50,50 50,0 Z',
-      zigzag: 'M 0,50 L 20,30 L 40,70 L 60,30 L 80,70 L 100,50 L 100,100 L 0,100 Z',
-      arrow: 'M 10,40 H 60 V 15 L 95,50 L 60,85 V 60 H 10 Z'
-    };
-
-    // Load available pages on boot
-    async function loadPagesList(selectedPath = null) {
-      try {
-        const res = await fetch('/api/pages');
-        const pages = await res.json();
-        
-        pageSelect.innerHTML = '';
-        pages.forEach(p => {
-          const opt = document.createElement('option');
-          opt.value = p;
-          opt.textContent = p;
-          pageSelect.appendChild(opt);
-        });
-
-        if (selectedPath && pages.includes(selectedPath)) {
-          pageSelect.value = selectedPath;
-          activePage = selectedPath;
-        } else if (pages.length > 0) {
-          activePage = pageSelect.value;
-        }
-      } catch (err) {
-        console.error('Failed to load pages list', err);
-      }
-    }
-
-    // Load a page state
-    async function loadPageState(pagePath) {
-      try {
-        const res = await fetch(`/api/load-page?path=${encodeURIComponent(pagePath)}`);
-        const state = await res.json();
-        
-        elements = state.elements || [];
-        googleFonts = state.googleFonts || ['Syne'];
-        backgroundColor = state.backgroundColor || '#111111';
-        activeElementIndex = null;
-        selectedIndices = [];
-        isUnsaved = false;
-        
-        // Persist page route selection
-        localStorage.setItem('zine-active-page', pagePath);
-        activePage = pagePath;
-
-        // Load background specs
-        if (backgroundColor.includes('gradient')) {
-          bgFillType.value = 'gradient';
-          bgSolidGroup.style.display = 'none';
-          bgGradientGroup.style.display = 'block';
-          // Try parse: linear-gradient(45deg, #111111, #222225)
-          const regex = /linear-gradient\((\d+)deg,\s*(#[0-9a-fA-F]{3,6}),\s*(#[0-9a-fA-F]{3,6})\)/;
-          const match = backgroundColor.match(regex);
-          if (match) {
-            bgGradAngle.value = match[1];
-            bgGradStart.value = match[2];
-            bgGradEnd.value = match[3];
-          }
-        } else {
-          bgFillType.value = 'solid';
-          bgSolidGroup.style.display = 'block';
-          bgGradientGroup.style.display = 'none';
-          bgColor.value = backgroundColor;
-          bgColorText.value = backgroundColor;
-        }
-
-        // Ensure google fonts are loaded dynamically in the editor page head
-        injectGoogleFonts();
-        
-        // Render
-        renderCanvas();
-        updatePropertiesPanel();
-        updateSaveButtonState();
-        hideFloatingUI();
-      } catch (err) {
-        console.error('Failed to load page state', err);
-      }
-    }
-
-    // Dynamic Google Fonts injector
-    function injectGoogleFonts() {
-      const injectionContainer = document.getElementById('fonts-injection');
-      injectionContainer.innerHTML = '';
-      
-      const loadedFonts = new Set([...googleFonts, ...elements.filter(el => el.type === 'text' && el.fontFamily).map(el => el.fontFamily)]);
-      
-      loadedFonts.forEach(font => {
-        if (font && font !== 'Inter') {
-          const link = document.createElement('link');
-          link.rel = 'stylesheet';
-          link.href = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(font)}:wght@400;700;800;900&display=swap`;
-          injectionContainer.appendChild(link);
-        }
-      });
-    }
-
-    // Compile active background from input states
-    function compileBackgroundStyleString() {
-      if (bgFillType.value === 'gradient') {
-        return `linear-gradient(${bgGradAngle.value}deg, ${bgGradStart.value}, ${bgGradEnd.value})`;
-      }
-      return bgColor.value;
-    }
-
-    // Save current active page state back to Express
-    async function savePageState(showNotice = true) {
-      try {
-        if (showNotice) {
-          saveFeedback.textContent = 'Saving...';
-          saveFeedback.style.color = '#3b82f6';
-        }
-        
-        // Ensure all fonts used are recorded in googleFonts
-        const usedFonts = new Set();
-        (elements || []).forEach(el => {
-          if (el && el.type === 'text' && el.fontFamily) {
-            usedFonts.add(el.fontFamily);
-          }
-        });
-        googleFonts = Array.from(usedFonts);
-
-        // Compute current compiled background color/style
-        const bgVal = compileBackgroundStyleString();
-
-        const res = await fetch('/api/save-page', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            pagePath: activePage,
-            elements: (elements || []).filter(Boolean),
-            googleFonts,
-            backgroundColor: bgVal
-          })
-        });
-
-        const result = await res.json();
-        if (res.ok && result.success) {
-          isUnsaved = false;
-          updateSaveButtonState();
-          if (showNotice) {
-            saveFeedback.textContent = 'Published successfully!';
-            saveFeedback.style.color = '#10b981';
-            setTimeout(() => {
-              saveFeedback.textContent = 'All changes live';
-              saveFeedback.style.color = '#71717a';
-            }, 3000);
-          }
-        } else {
-          throw new Error(result.error || 'Server rejected save request');
-        }
-      } catch (err) {
-        console.error('Failed to save page state', err);
-        if (showNotice) {
-          saveFeedback.textContent = `Error: ${err.message}`;
-          saveFeedback.style.color = '#ef4444';
-        }
-      }
-    }
-
-    function updateSaveButtonState() {
-      if (isUnsaved) {
-        saveBtn.classList.add('btn-primary');
-        saveBtn.style.animation = 'pulse 2s infinite';
-        saveFeedback.textContent = 'Unsaved modifications';
-        saveFeedback.style.color = '#fbbf24';
-      } else {
-        saveBtn.classList.remove('btn-primary');
-        saveBtn.style.animation = 'none';
-        saveFeedback.textContent = 'All changes live';
-        saveFeedback.style.color = '#71717a';
-      }
-    }
-
-    // Render elements inside mobile canvas
-    function renderCanvas() {
-      // Filter out any invalid elements defensively
-      elements = (elements || []).filter(Boolean);
-
-      // Clean canvas except guides
-      const guides = canvas.querySelector('.canvas-margin-guides');
-      canvas.innerHTML = '';
-      canvas.appendChild(guides);
-
-      // Set bg style on the entire workspace viewport, keeping the dot grid on top
-      const currentBg = compileBackgroundStyleString();
-      const workspaceEl = document.getElementById('workspace');
-      const dotGrid = 'radial-gradient(rgba(255, 255, 255, 0.12) 1.2px, transparent 1.2px)';
-      workspaceEl.style.background = `${dotGrid}, ${currentBg}`;
-      workspaceEl.style.backgroundSize = '24px 24px, auto';
-
-      // Keep canvas container itself transparent
-      canvas.style.background = 'transparent';
-      canvas.style.backgroundColor = 'transparent';
-
-      // Adjust height of canvas based on elements
-      let maxElementY = 100; // minimum 100 width units height (=375px)
-      elements.forEach(el => {
-        // Estimate height in units (approx 15 if not set)
-        let estHeight = 30;
-        if (el.type === 'text') {
-          estHeight = (el.fontSize || 4) * 3;
-        } else if (el.type === 'shape') {
-          estHeight = el.h || el.w || 30;
-        }
-        const bottomY = parseFloat(el.y) + estHeight;
-        if (bottomY > maxElementY) {
-          maxElementY = bottomY;
-        }
-      });
-
-      // Expand canvas
-      const pxHeight = Math.max(667, Math.round(maxElementY * (canvasWidth / 100)));
-      canvas.style.height = `${pxHeight}px`;
-      canvasHeightInfo.textContent = `Canvas size: 375 x ${pxHeight}px (Aspect-locked scale)`;
-
-      // Render items
-      elements.forEach((el, idx) => {
-        const div = document.createElement('div');
-        div.className = `editor-element ${el.type}-element`;
-        if (idx === activeElementIndex) {
-          div.classList.add('active');
-        }
-        if (selectedIndices.includes(idx)) {
-          div.classList.add('selected-element');
-        }
-        div.dataset.index = idx;
-
-        // Position coordinates mapped relative to canvas width
-        const leftPx = (el.x / 100) * canvasWidth;
-        const topPx = (el.y / 100) * canvasWidth;
-        const widthPx = (el.w / 100) * canvasWidth;
-
-        div.style.left = `${leftPx}px`;
-        div.style.top = `${topPx}px`;
-        div.style.width = `${widthPx}px`;
-        
-        // Set height for shapes
-        if (el.type === 'shape') {
-          const heightUnits = el.h || el.w || 30;
-          div.style.height = `${(heightUnits / 100) * canvasWidth}px`;
-        }
-
-        // Apply rotational/skew transforms including 3D Tilt Rotate
-        let transformParts = [];
-        if (el.rotate) transformParts.push(`rotate(${el.rotate}deg)`);
-        if (el.rotateX) transformParts.push(`rotateX(${el.rotateX}deg)`);
-        if (el.rotateY) transformParts.push(`rotateY(${el.rotateY}deg)`);
-        if (el.skewX) transformParts.push(`skewX(${el.skewX}deg)`);
-        if (el.skewY) transformParts.push(`skewY(${el.skewY}deg)`);
-
-        if (transformParts.length > 0) {
-          div.style.transform = `perspective(600px) ${transformParts.join(' ')}`;
-          div.style.transformStyle = 'preserve-3d';
-          div.style.backfaceVisibility = 'visible';
-        } else {
-          div.style.transform = '';
-        }
-        
-        if (el.blendMode) {
-          div.style.mixBlendMode = el.blendMode;
-        }
-
-        // Apply universal border styles
-        if (el.borderWidth) {
-          div.style.borderWidth = `${el.borderWidth}px`;
-          div.style.borderStyle = el.borderStyle || 'solid';
-          div.style.borderColor = el.borderColor || '#ffffff';
-        } else {
-          div.style.borderWidth = '';
-          div.style.borderStyle = '';
-          div.style.borderColor = '';
-        }
-        if (el.elementBorderRadius) {
-          div.style.borderRadius = `${el.elementBorderRadius}px`;
-          div.style.overflow = 'hidden';
-        } else {
-          div.style.borderRadius = '';
-          div.style.overflow = '';
-        }
-
-        // Apply universal shadow styles
-        if (el.shadowEnable) {
-          const x = el.shadowX !== undefined ? el.shadowX : 4;
-          const y = el.shadowY !== undefined ? el.shadowY : 4;
-          const blur = el.shadowBlur !== undefined ? el.shadowBlur : 8;
-          const color = el.shadowColor || '#000000';
-          div.style.filter = `drop-shadow(${x}px ${y}px ${blur}px ${color})`;
-        } else {
-          div.style.filter = '';
-        }
-
-        if (el.type === 'text') {
-          div.style.fontSize = `${(el.fontSize || 4) * (canvasWidth / 100)}px`;
-          div.style.fontFamily = `'${el.fontFamily || 'Inter'}', sans-serif`;
-          div.style.textAlign = el.textAlign || 'left';
-          div.style.fontWeight = el.fontWeight || '400';
-          
-          // Apply tracking and leading
-          if (el.tracking !== undefined && el.tracking !== '') {
-            div.style.letterSpacing = `${el.tracking}px`;
-          } else {
-            div.style.letterSpacing = '';
-          }
-          if (el.leading !== undefined && el.leading !== '') {
-            div.style.lineHeight = el.leading;
-          } else {
-            div.style.lineHeight = '';
-          }
-          
-          if (el.fillType === 'gradient') {
-            const start = el.gradientColorStart || '#ff007f';
-            const end = el.gradientColorEnd || '#7f00ff';
-            const angle = el.gradientAngle || 45;
-            div.style.background = `linear-gradient(${angle}deg, ${start}, ${end})`;
-            div.style.webkitBackgroundClip = 'text';
-            div.style.webkitTextFillColor = 'transparent';
-            div.style.color = 'transparent';
-          } else {
-            div.style.background = '';
-            div.style.webkitBackgroundClip = '';
-            div.style.webkitTextFillColor = '';
-            div.style.color = el.color || '#ffffff';
-          }
-          div.textContent = el.text || '';
-
-        } else if (el.type === 'image') {
-          const img = document.createElement('img');
-          img.src = el.src;
-          img.referrerPolicy = 'no-referrer';
-          
-          if (el.aspectRatio) {
-            div.style.aspectRatio = el.aspectRatio;
-          }
-          div.appendChild(img);
-
-        } else if (el.type === 'shape') {
-          // Live SVG Rendering inside the editor element
-          let gradientDef = '';
-          let fillAttr = el.fillColor || '#ffffff';
-
-          if (el.fillType === 'gradient') {
-            const start = el.gradientColorStart || '#ff007f';
-            const end = el.gradientColorEnd || '#7f00ff';
-            const angle = el.gradientAngle || 45;
-            
-            const angleRad = (angle * Math.PI) / 180;
-            const x1 = Math.round(50 - Math.cos(angleRad) * 50) + '%';
-            const y1 = Math.round(50 + Math.sin(angleRad) * 50) + '%';
-            const x2 = Math.round(50 + Math.cos(angleRad) * 50) + '%';
-            const y2 = Math.round(50 - Math.sin(angleRad) * 50) + '%';
-
-            gradientDef = `
-              <defs>
-                <linearGradient id="editor-shape-grad-${idx}" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}">
-                  <stop offset="0%" stop-color="${start}" />
-                  <stop offset="100%" stop-color="${end}" />
-                </linearGradient>
-              </defs>`;
-            fillAttr = `url(#editor-shape-grad-${idx})`;
-          }
-
-          const strokeAttr = el.strokeColor || 'none';
-          const strokeWidthAttr = el.strokeWidth || 0;
-          const shapeType = el.shapeType || 'circle';
-
-          let shapeSvgElement = '';
-          if (shapeType === 'circle') {
-            shapeSvgElement = `<circle cx="50" cy="50" r="${48 - strokeWidthAttr/2}" fill="${fillAttr}" stroke="${strokeAttr}" stroke-width="${strokeWidthAttr}" />`;
-          } else if (shapeType === 'ellipse') {
-            shapeSvgElement = `<ellipse cx="50" cy="50" rx="${48 - strokeWidthAttr/2}" ry="${33 - strokeWidthAttr/2}" fill="${fillAttr}" stroke="${strokeAttr}" stroke-width="${strokeWidthAttr}" />`;
-          } else if (shapeType === 'square' || shapeType === 'rect') {
-            const rx = el.borderRadius || 0;
-            shapeSvgElement = `<rect x="${strokeWidthAttr/2 + 1}" y="${strokeWidthAttr/2 + 1}" width="${98 - strokeWidthAttr}" height="${98 - strokeWidthAttr}" rx="${rx}" ry="${rx}" fill="${fillAttr}" stroke="${strokeAttr}" stroke-width="${strokeWidthAttr}" />`;
-          } else if (shapeType === 'triangle') {
-            shapeSvgElement = `<polygon points="50,${strokeWidthAttr + 2} ${98 - strokeWidthAttr},${98 - strokeWidthAttr} ${strokeWidthAttr + 2},${98 - strokeWidthAttr}" fill="${fillAttr}" stroke="${strokeAttr}" stroke-width="${strokeWidthAttr}" />`;
-          } else if (shapeType === 'star') {
-            shapeSvgElement = `<polygon points="50,5 64,36 98,36 70,57 81,91 50,70 19,91 30,57 2,36 36,36" fill="${fillAttr}" stroke="${strokeAttr}" stroke-width="${strokeWidthAttr}" />`;
-          } else if (shapeType === 'custom-svg') {
-            const pathData = el.customSvgPath || 'M 10,50 Q 25,25 50,50 T 90,50';
-            shapeSvgElement = `<path d="${pathData}" fill="${fillAttr}" stroke="${strokeAttr}" stroke-width="${strokeWidthAttr}" stroke-linecap="round" stroke-linejoin="round" />`;
-          }
-
-          div.innerHTML = `
-            <svg viewBox="0 0 100 100" width="100%" height="100%" preserveAspectRatio="none">${gradientDef}
-              ${shapeSvgElement}
-            </svg>
-          `;
-        }
-
-        // Attach drag events
-        setupDragEvents(div, idx);
-
-        // Double click launches inline contenteditable text edit or floating inspector popup
-        div.addEventListener('dblclick', (e) => {
-          e.stopPropagation();
-          triggerDoubleClickAction(idx, e.clientX, e.clientY);
-        });
-
-        // On blur, exit text editing & save
-        if (el.type === 'text') {
-          div.addEventListener('blur', () => {
-            if (div.contentEditable === 'true') {
-              div.contentEditable = 'false';
-              // Use innerText to preserve newline formatting correctly
-              elements[idx].text = div.innerText;
-              isUnsaved = true;
-              updateSaveButtonState();
-              updatePropertiesPanel();
-              renderCanvas();
-            }
-          });
-          
-          // Enter finishes inline text editing, shift+enter allows newlines
-          div.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-              div.blur();
-              e.preventDefault();
-            }
-          });
-        }
-
-        // Right click launches custom context menu
-        div.addEventListener('contextmenu', (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          selectElement(idx);
-          showContextMenu(e.clientX, e.clientY);
-        });
-
-        // Render resizing handles on selected active elements
-        if (idx === activeElementIndex) {
-          div.classList.add('active');
-          createResizeHandles(div, el, idx);
-        }
-
-        canvas.appendChild(div);
-      });
-
-      // Update position of floating quickbar if an element is active
-      repositionQuickbar();
-    }
-
-    // Drag and drop mechanics supporting multi-selection group movement
-    function setupDragEvents(elementDiv, idx) {
-      elementDiv.addEventListener('mousedown', (e) => {
-        if (e.button !== 0) return;
-        if (elementDiv.contentEditable === 'true') return;
-        
-        // Custom Double Click Detection (essential for mobile/canvas DOM elements re-created dynamically)
-        const now = Date.now();
-        if (idx === lastClickIdx && (now - lastClickTime) < 300) {
-          e.preventDefault();
-          e.stopPropagation();
-          triggerDoubleClickAction(idx, e.clientX, e.clientY);
-          lastClickTime = 0;
-          lastClickIdx = null;
-          return;
-        }
-        lastClickTime = now;
-        lastClickIdx = idx;
-
-        e.preventDefault();
-        e.stopPropagation();
-        
-        const isShift = e.shiftKey;
-        
-        if (isShift) {
-          const sIdx = selectedIndices.indexOf(idx);
-          if (sIdx > -1) {
-            selectedIndices.splice(sIdx, 1);
-            activeElementIndex = selectedIndices.length > 0 ? selectedIndices[selectedIndices.length - 1] : null;
-          } else {
-            selectedIndices.push(idx);
-            activeElementIndex = idx;
-          }
-          renderCanvas();
-          updatePropertiesPanel();
-        } else {
-          if (!selectedIndices.includes(idx)) {
-            selectedIndices = [idx];
-            activeElementIndex = idx;
-            renderCanvas();
-            updatePropertiesPanel();
-          }
-        }
-        
-        // Record start positions for all elements in selection
-        const startPositions = selectedIndices.map(sIdx => {
-          const el = elements[sIdx];
-          return {
-            index: sIdx,
-            x: el ? el.x : 0,
-            y: el ? el.y : 0
-          };
-        });
-        
-        const startMouseX = e.clientX;
-        const startMouseY = e.clientY;
-        let totalDragDist = 0;
-        
-        function onMouseMove(moveEvt) {
-          const dx = moveEvt.clientX - startMouseX;
-          const dy = moveEvt.clientY - startMouseY;
-          totalDragDist = Math.sqrt(dx * dx + dy * dy);
-          
-          const pxToUnits = canvasWidth / 100;
-          const dxUnits = dx / pxToUnits;
-          const dyUnits = dy / pxToUnits;
-          
-          // Move each selected element relative to its start position
-          startPositions.forEach(pos => {
-            if (!elements[pos.index]) return;
-            let nextX = pos.x + dxUnits;
-            let nextY = pos.y + dyUnits;
-            
-            // Constrain within a reasonable workspace bound
-            nextX = Math.max(-50, Math.min(100, nextX));
-            nextY = Math.max(0, nextY);
-            
-            elements[pos.index].x = parseFloat(nextX.toFixed(2));
-            elements[pos.index].y = parseFloat(nextY.toFixed(2));
-            
-            // Fast direct styling update for immediate visual feedback
-            const div = canvas.querySelector(`.editor-element[data-index="${pos.index}"]`);
-            if (div) {
-              div.style.left = `${(nextX / 100) * canvasWidth}px`;
-              div.style.top = `${(nextY / 100) * canvasWidth}px`;
-            }
-          });
-          
-          // Sync coordinates for active element in properties box
-          if (activeElementIndex !== null && elements[activeElementIndex]) {
-            const activeEl = elements[activeElementIndex];
-            propX.value = activeEl.x;
-            propY.value = activeEl.y;
-            floatX.value = activeEl.x;
-            floatY.value = activeEl.y;
-          }
-          
-          isUnsaved = true;
-          updateSaveButtonState();
-          repositionQuickbar();
-        }
-        
-        function onMouseUp() {
-          window.removeEventListener('mousemove', onMouseMove);
-          window.removeEventListener('mouseup', onMouseUp);
-          
-          // If clicked but not dragged, isolate selection on release when Shift isn't held
-          if (totalDragDist < 4 && !isShift) {
-            selectedIndices = [idx];
-            activeElementIndex = idx;
-          }
-          
-          renderCanvas();
-          updatePropertiesPanel();
-        }
-        
-        window.addEventListener('mousemove', onMouseMove);
-        window.addEventListener('mouseup', onMouseUp);
-      });
-    }
-
-    // Select an element & populate inspector (supports shift click toggles)
-    function selectElement(idx, isShift = false) {
-      if (isShift) {
-        const sIdx = selectedIndices.indexOf(idx);
-        if (sIdx > -1) {
-          selectedIndices.splice(sIdx, 1);
-          activeElementIndex = selectedIndices.length > 0 ? selectedIndices[selectedIndices.length - 1] : null;
-        } else {
-          selectedIndices.push(idx);
-          activeElementIndex = idx;
-        }
-      } else {
-        selectedIndices = [idx];
-        activeElementIndex = idx;
-      }
-      
-      renderCanvas();
-      updatePropertiesPanel();
-      repositionQuickbar();
-    }
-
-    // Refresh Property Panel UI elements based on active item
-    function updatePropertiesPanel() {
-      if (activeElementIndex === null || !elements[activeElementIndex]) {
-        propertiesPlaceholder.style.display = 'block';
-        propertiesPanel.style.display = 'none';
-        quickbar.style.display = 'none';
-        return;
-      }
-
-      propertiesPlaceholder.style.display = 'none';
-      propertiesPanel.style.display = 'block';
-
-      const el = elements[activeElementIndex];
-
-      // Sync coordinate inputs
-      propX.value = el.x;
-      propY.value = el.y;
-
-      // Sync width scale
-      propW.value = el.w;
-      propWVal.textContent = `${el.w}%`;
-
-      // Sync shape height ratio
-      if (el.type === 'shape') {
-        shapeHeightProp.style.display = 'block';
-        const heightVal = el.h || el.w || 30;
-        propH.value = heightVal;
-        propHVal.textContent = `${heightVal}%`;
-      } else {
-        shapeHeightProp.style.display = 'none';
-      }
-
-      // Sync advanced transforms
-      propRotate.value = el.rotate || 0;
-      propRotateVal.textContent = `${el.rotate || 0}°`;
-      propRotateX.value = el.rotateX || 0;
-      propRotateXVal.textContent = `${el.rotateX || 0}°`;
-      propRotateY.value = el.rotateY || 0;
-      propRotateYVal.textContent = `${el.rotateY || 0}°`;
-      propSkewX.value = el.skewX || 0;
-      propSkewXVal.textContent = `${el.skewX || 0}°`;
-      propSkewY.value = el.skewY || 0;
-      propSkewYVal.textContent = `${el.skewY || 0}°`;
-
-      // Sync Fill Treatment
-      propFillType.value = el.fillType || 'solid';
-      if (el.fillType === 'gradient') {
-        propSolidGroup.style.display = 'none';
-        propGradientGroup.style.display = 'block';
-        propGradAngle.value = el.gradientAngle || 45;
-        propGradStart.value = el.gradientColorStart || '#ff007f';
-        propGradEnd.value = el.gradientColorEnd || '#7f00ff';
-      } else {
-        propSolidGroup.style.display = 'block';
-        propGradientGroup.style.display = 'none';
-        propColor.value = el.color || el.fillColor || '#ffffff';
-        propColorText.value = el.color || el.fillColor || '#ffffff';
-      }
-
-      // Sync blend mode
-      propBlend.value = el.blendMode || 'normal';
-
-      // Sync Borders & radius
-      const bWidth = el.borderWidth || 0;
-      propBorderWidth.value = bWidth;
-      propBorderWidthVal.textContent = `${bWidth}px`;
-      propBorderStyle.value = el.borderStyle || 'none';
-      propBorderColor.value = el.borderColor || '#ffffff';
-      const bRad = el.elementBorderRadius || 0;
-      propElementBorderRadius.value = bRad;
-      propElementBorderRadiusVal.textContent = `${bRad}px`;
-
-      // Sync Drop Shadows
-      propShadowEnable.checked = !!el.shadowEnable;
-      if (el.shadowEnable) {
-        shadowControlsGroup.style.display = 'block';
-      } else {
-        shadowControlsGroup.style.display = 'none';
-      }
-      propShadowColor.value = el.shadowColor || '#000000';
-      const sBlur = el.shadowBlur !== undefined ? el.shadowBlur : 8;
-      propShadowBlur.value = sBlur;
-      propShadowBlurVal.textContent = `${sBlur}px`;
-      propShadowX.value = el.shadowX !== undefined ? el.shadowX : 4;
-      propShadowY.value = el.shadowY !== undefined ? el.shadowY : 4;
-
-      // Type-specific inputs
-      if (el.type === 'text') {
-        textOnlyProps.style.display = 'block';
-        shapeOnlyProps.style.display = 'none';
-        
-        propS.value = el.fontSize || 4;
-        propSVal.textContent = el.fontSize || 4;
-        propFont.value = el.fontFamily || 'Inter';
-        propText.value = el.text || '';
-
-        // Sync tracking & leading
-        const trackVal = el.tracking !== undefined ? el.tracking : 0;
-        propTracking.value = trackVal;
-        propTrackingVal.textContent = `${trackVal}px`;
-        const leadVal = el.leading !== undefined ? el.leading : 1.2;
-        propLeading.value = leadVal;
-        propLeadingVal.textContent = `${leadVal}`;
-
-        // Reset alignment highlights
-        [alignLeft, alignCenter, alignRight, alignJustify].forEach(btn => btn.style.borderColor = '');
-        const align = el.textAlign || 'left';
-        if (align === 'left') alignLeft.style.borderColor = '#3b82f6';
-        if (align === 'center') alignCenter.style.borderColor = '#3b82f6';
-        if (align === 'right') alignRight.style.borderColor = '#3b82f6';
-        if (align === 'justify') alignJustify.style.borderColor = '#3b82f6';
-
-      } else if (el.type === 'shape') {
-        textOnlyProps.style.display = 'none';
-        shapeOnlyProps.style.display = 'block';
-
-        propShapeType.value = el.shapeType || 'circle';
-        propBorderRadius.value = el.borderRadius || 0;
-        propBorderRadiusVal.textContent = el.borderRadius || 0;
-        propStrokeColor.value = el.strokeColor || '#ffffff';
-        propStrokeWidth.value = el.strokeWidth || 0;
-        propStrokeWidthVal.textContent = el.strokeWidth || 0;
-
-        if (el.shapeType === 'custom-svg') {
-          customSvgPathGroup.style.display = 'block';
-          propCustomSvgPath.value = el.customSvgPath || '';
-          propSvgPresets.value = '';
-        } else {
-          customSvgPathGroup.style.display = 'none';
-        }
-
-      } else {
-        textOnlyProps.style.display = 'none';
-        shapeOnlyProps.style.display = 'none';
-      }
-
-      // Simultaneously keep FLOATING INSPECTOR values in sync too!
-      syncFloatingInspectorFields();
-    }
-
-    // Populate and match floating inspector fields to selected item
-    function syncFloatingInspectorFields() {
-      if (activeElementIndex === null || !elements[activeElementIndex]) return;
-      const el = elements[activeElementIndex];
-
-      floatX.value = el.x;
-      floatY.value = el.y;
-      floatW.value = el.w;
-      
-      const floatHProp = inspector.querySelector('.float-shape-only');
-      const floatTextProp = inspector.querySelector('.float-text-only');
-
-      if (el.type === 'shape') {
-        floatHProp.style.display = 'block';
-        floatH.value = el.h || el.w || 30;
-        floatTextProp.style.display = 'none';
-      } else if (el.type === 'text') {
-        floatHProp.style.display = 'none';
-        floatTextProp.style.display = 'block';
-        floatText.value = el.text || '';
-      } else {
-        floatHProp.style.display = 'none';
-        floatTextProp.style.display = 'none';
-      }
-
-      floatFillType.value = el.fillType || 'solid';
-      if (el.fillType === 'gradient') {
-        floatSolidGroup.style.display = 'none';
-        floatGradientGroup.style.display = 'block';
-        floatGradAngle.value = el.gradientAngle || 45;
-        floatGradStart.value = el.gradientColorStart || '#ff007f';
-        floatGradEnd.value = el.gradientColorEnd || '#7f00ff';
-      } else {
-        floatSolidGroup.style.display = 'block';
-        floatGradientGroup.style.display = 'none';
-        floatColorPicker.value = el.color || el.fillColor || '#ffffff';
-        floatColorText.value = el.color || el.fillColor || '#ffffff';
-      }
-
-      floatBlend.value = el.blendMode || 'normal';
-
-      floatRotate.value = el.rotate || 0;
-      floatRotateX.value = el.rotateX || 0;
-      floatRotateY.value = el.rotateY || 0;
-      floatSkewX.value = el.skewX || 0;
-      floatSkewY.value = el.skewY || 0;
-    }
-
-    // Sync floating inspector triggers back to element states
-    function applyFloatChanges() {
-      if (activeElementIndex === null || !elements[activeElementIndex]) return;
-      const el = elements[activeElementIndex];
-
-      el.x = parseFloat(floatX.value) || 0;
-      el.y = parseFloat(floatY.value) || 0;
-      el.w = parseInt(floatW.value);
-      
-      if (el.type === 'shape') {
-        el.h = parseInt(floatH.value);
-      } else if (el.type === 'text') {
-        el.text = floatText.value;
-      }
-
-      el.fillType = floatFillType.value;
-      if (el.fillType === 'gradient') {
-        el.gradientAngle = parseInt(floatGradAngle.value);
-        el.gradientColorStart = floatGradStart.value;
-        el.gradientColorEnd = floatGradEnd.value;
-      } else {
-        if (el.type === 'text') {
-          el.color = floatColorPicker.value;
-        } else {
-          el.fillColor = floatColorPicker.value;
-        }
-      }
-
-      el.blendMode = floatBlend.value;
-      el.rotate = parseInt(floatRotate.value);
-      el.rotateX = parseInt(floatRotateX.value);
-      el.rotateY = parseInt(floatRotateY.value);
-      el.skewX = parseInt(floatSkewX.value);
-      el.skewY = parseInt(floatSkewY.value);
-
-      isUnsaved = true;
-      updateSaveButtonState();
-      renderCanvas();
-      updatePropertiesPanel();
-    }
-
-    // Properties input triggers
-    propX.addEventListener('input', () => {
-      if (activeElementIndex !== null) {
-        elements[activeElementIndex].x = parseFloat(propX.value) || 0;
-        isUnsaved = true;
-        updateSaveButtonState();
-        renderCanvas();
-      }
-    });
-
-    propY.addEventListener('input', () => {
-      if (activeElementIndex !== null) {
-        elements[activeElementIndex].y = parseFloat(propY.value) || 0;
-        isUnsaved = true;
-        updateSaveButtonState();
-        renderCanvas();
-      }
-    });
-
-    propW.addEventListener('input', () => {
-      if (activeElementIndex !== null) {
-        const val = parseInt(propW.value);
-        elements[activeElementIndex].w = val;
-        propWVal.textContent = `${val}%`;
-        isUnsaved = true;
-        updateSaveButtonState();
-        renderCanvas();
-      }
-    });
-
-    propH.addEventListener('input', () => {
-      if (activeElementIndex !== null && elements[activeElementIndex].type === 'shape') {
-        const val = parseInt(propH.value);
-        elements[activeElementIndex].h = val;
-        propHVal.textContent = `${val}%`;
-        isUnsaved = true;
-        updateSaveButtonState();
-        renderCanvas();
-      }
-    });
-
-    // Rotation and Warp Sliders Binding
-    propRotate.addEventListener('input', () => {
-      if (activeElementIndex !== null) {
-        const val = parseInt(propRotate.value);
-        elements[activeElementIndex].rotate = val;
-        propRotateVal.textContent = `${val}°`;
-        isUnsaved = true;
-        updateSaveButtonState();
-        renderCanvas();
-      }
-    });
-    propRotateX.addEventListener('input', () => {
-      if (activeElementIndex !== null) {
-        const val = parseInt(propRotateX.value);
-        elements[activeElementIndex].rotateX = val;
-        propRotateXVal.textContent = `${val}°`;
-        isUnsaved = true;
-        updateSaveButtonState();
-        renderCanvas();
-      }
-    });
-    propRotateY.addEventListener('input', () => {
-      if (activeElementIndex !== null) {
-        const val = parseInt(propRotateY.value);
-        elements[activeElementIndex].rotateY = val;
-        propRotateYVal.textContent = `${val}°`;
-        isUnsaved = true;
-        updateSaveButtonState();
-        renderCanvas();
-      }
-    });
-    propSkewX.addEventListener('input', () => {
-      if (activeElementIndex !== null) {
-        const val = parseInt(propSkewX.value);
-        elements[activeElementIndex].skewX = val;
-        propSkewXVal.textContent = `${val}°`;
-        isUnsaved = true;
-        updateSaveButtonState();
-        renderCanvas();
-      }
-    });
-    propSkewY.addEventListener('input', () => {
-      if (activeElementIndex !== null) {
-        const val = parseInt(propSkewY.value);
-        elements[activeElementIndex].skewY = val;
-        propSkewYVal.textContent = `${val}°`;
-        isUnsaved = true;
-        updateSaveButtonState();
-        renderCanvas();
-      }
-    });
-
-    // Solid vs Gradient fill bindings
-    propFillType.addEventListener('change', () => {
-      if (activeElementIndex !== null) {
-        const val = propFillType.value;
-        elements[activeElementIndex].fillType = val;
-        if (val === 'gradient') {
-          propSolidGroup.style.display = 'none';
-          propGradientGroup.style.display = 'block';
-          elements[activeElementIndex].gradientAngle = parseInt(propGradAngle.value);
-          elements[activeElementIndex].gradientColorStart = propGradStart.value;
-          elements[activeElementIndex].gradientColorEnd = propGradEnd.value;
-        } else {
-          propSolidGroup.style.display = 'block';
-          propGradientGroup.style.display = 'none';
-          if (elements[activeElementIndex].type === 'text') {
-            elements[activeElementIndex].color = propColor.value;
-          } else {
-            elements[activeElementIndex].fillColor = propColor.value;
-          }
-        }
-        isUnsaved = true;
-        updateSaveButtonState();
-        renderCanvas();
-        updatePropertiesPanel();
-      }
-    });
-
-    function updateGradientProperty() {
-      if (activeElementIndex !== null) {
-        elements[activeElementIndex].gradientAngle = parseInt(propGradAngle.value);
-        elements[activeElementIndex].gradientColorStart = propGradStart.value;
-        elements[activeElementIndex].gradientColorEnd = propGradEnd.value;
-        isUnsaved = true;
-        updateSaveButtonState();
-        renderCanvas();
-      }
-    }
-    propGradAngle.addEventListener('input', updateGradientProperty);
-    propGradStart.addEventListener('input', updateGradientProperty);
-    propGradEnd.addEventListener('input', updateGradientProperty);
-
-    propS.addEventListener('input', () => {
-      if (activeElementIndex !== null && elements[activeElementIndex].type === 'text') {
-        const val = parseFloat(propS.value);
-        elements[activeElementIndex].fontSize = val;
-        propSVal.textContent = val;
-        isUnsaved = true;
-        updateSaveButtonState();
-        renderCanvas();
-      }
-    });
-
-    propFont.addEventListener('change', () => {
-      if (activeElementIndex !== null && elements[activeElementIndex].type === 'text') {
-        const font = propFont.value;
-        elements[activeElementIndex].fontFamily = font;
-        
-        // Add font to loaded collection if missing
-        if (!googleFonts.includes(font)) {
-          googleFonts.push(font);
-          injectGoogleFonts();
-        }
-        
-        isUnsaved = true;
-        updateSaveButtonState();
-        renderCanvas();
-      }
-    });
-
-    // Helper for syncing color selector & hex field
-    function updatePropColor(hex) {
-      if (activeElementIndex !== null) {
-        const el = elements[activeElementIndex];
-        if (el.type === 'text') {
-          el.color = hex;
-        } else {
-          el.fillColor = hex;
-        }
-        propColor.value = hex;
-        propColorText.value = hex;
-        isUnsaved = true;
-        updateSaveButtonState();
-        renderCanvas();
-      }
-    }
-    propColor.addEventListener('input', (e) => updatePropColor(e.target.value));
-    propColorText.addEventListener('input', (e) => {
-      let val = e.target.value;
-      if (val.startsWith('#') && (val.length === 4 || val.length === 7)) {
-        updatePropColor(val);
-      }
-    });
-
-    propText.addEventListener('input', () => {
-      if (activeElementIndex !== null && elements[activeElementIndex].type === 'text') {
-        elements[activeElementIndex].text = propText.value;
-        isUnsaved = true;
-        updateSaveButtonState();
-        renderCanvas();
-      }
-    });
-
-    propBlend.addEventListener('change', () => {
-      if (activeElementIndex !== null) {
-        elements[activeElementIndex].blendMode = propBlend.value;
-        isUnsaved = true;
-        updateSaveButtonState();
-        renderCanvas();
-      }
-    });
-
-    // Shape customization elements
-    propShapeType.addEventListener('change', () => {
-      if (activeElementIndex !== null && elements[activeElementIndex].type === 'shape') {
-        const type = propShapeType.value;
-        elements[activeElementIndex].shapeType = type;
-        if (type === 'custom-svg') {
-          customSvgPathGroup.style.display = 'block';
-          propCustomSvgPath.value = elements[activeElementIndex].customSvgPath || '';
-        } else {
-          customSvgPathGroup.style.display = 'none';
-        }
-        isUnsaved = true;
-        updateSaveButtonState();
-        renderCanvas();
-        updatePropertiesPanel();
-      }
-    });
-
-    propBorderRadius.addEventListener('input', () => {
-      if (activeElementIndex !== null && elements[activeElementIndex].type === 'shape') {
-        const val = parseInt(propBorderRadius.value);
-        elements[activeElementIndex].borderRadius = val;
-        propBorderRadiusVal.textContent = val;
-        isUnsaved = true;
-        updateSaveButtonState();
-        renderCanvas();
-      }
-    });
-
-    propStrokeColor.addEventListener('input', () => {
-      if (activeElementIndex !== null && elements[activeElementIndex].type === 'shape') {
-        elements[activeElementIndex].strokeColor = propStrokeColor.value;
-        isUnsaved = true;
-        updateSaveButtonState();
-        renderCanvas();
-      }
-    });
-
-    propStrokeWidth.addEventListener('input', () => {
-      if (activeElementIndex !== null && elements[activeElementIndex].type === 'shape') {
-        const val = parseInt(propStrokeWidth.value);
-        elements[activeElementIndex].strokeWidth = val;
-        propStrokeWidthVal.textContent = val;
-        isUnsaved = true;
-        updateSaveButtonState();
-        renderCanvas();
-      }
-    });
-
-    // Borders & Corner Radii Event Listeners
-    propBorderWidth.addEventListener('input', () => {
-      if (activeElementIndex !== null) {
-        const val = parseInt(propBorderWidth.value) || 0;
-        elements[activeElementIndex].borderWidth = val;
-        propBorderWidthVal.textContent = `${val}px`;
-        isUnsaved = true;
-        updateSaveButtonState();
-        renderCanvas();
-      }
-    });
-
-    propBorderStyle.addEventListener('change', () => {
-      if (activeElementIndex !== null) {
-        elements[activeElementIndex].borderStyle = propBorderStyle.value;
-        isUnsaved = true;
-        updateSaveButtonState();
-        renderCanvas();
-      }
-    });
-
-    propBorderColor.addEventListener('input', () => {
-      if (activeElementIndex !== null) {
-        elements[activeElementIndex].borderColor = propBorderColor.value;
-        isUnsaved = true;
-        updateSaveButtonState();
-        renderCanvas();
-      }
-    });
-
-    propElementBorderRadius.addEventListener('input', () => {
-      if (activeElementIndex !== null) {
-        const val = parseInt(propElementBorderRadius.value) || 0;
-        elements[activeElementIndex].elementBorderRadius = val;
-        propElementBorderRadiusVal.textContent = `${val}px`;
-        isUnsaved = true;
-        updateSaveButtonState();
-        renderCanvas();
-      }
-    });
-
-    // Drop Shadows Event Listeners
-    propShadowEnable.addEventListener('change', () => {
-      if (activeElementIndex !== null) {
-        const enabled = propShadowEnable.checked;
-        elements[activeElementIndex].shadowEnable = enabled;
-        shadowControlsGroup.style.display = enabled ? 'block' : 'none';
-        isUnsaved = true;
-        updateSaveButtonState();
-        renderCanvas();
-      }
-    });
-
-    propShadowColor.addEventListener('input', () => {
-      if (activeElementIndex !== null) {
-        elements[activeElementIndex].shadowColor = propShadowColor.value;
-        isUnsaved = true;
-        updateSaveButtonState();
-        renderCanvas();
-      }
-    });
-
-    propShadowBlur.addEventListener('input', () => {
-      if (activeElementIndex !== null) {
-        const val = parseInt(propShadowBlur.value) || 0;
-        elements[activeElementIndex].shadowBlur = val;
-        propShadowBlurVal.textContent = `${val}px`;
-        isUnsaved = true;
-        updateSaveButtonState();
-        renderCanvas();
-      }
-    });
-
-    propShadowX.addEventListener('input', () => {
-      if (activeElementIndex !== null) {
-        elements[activeElementIndex].shadowX = parseInt(propShadowX.value) || 0;
-        isUnsaved = true;
-        updateSaveButtonState();
-        renderCanvas();
-      }
-    });
-
-    propShadowY.addEventListener('input', () => {
-      if (activeElementIndex !== null) {
-        elements[activeElementIndex].shadowY = parseInt(propShadowY.value) || 0;
-        isUnsaved = true;
-        updateSaveButtonState();
-        renderCanvas();
-      }
-    });
-
-    // Letter-spacing (Tracking) & Line-height (Leading) Event Listeners
-    propTracking.addEventListener('input', () => {
-      if (activeElementIndex !== null && elements[activeElementIndex].type === 'text') {
-        const val = parseFloat(propTracking.value) || 0;
-        elements[activeElementIndex].tracking = val;
-        propTrackingVal.textContent = `${val}px`;
-        isUnsaved = true;
-        updateSaveButtonState();
-        renderCanvas();
-      }
-    });
-
-    propLeading.addEventListener('input', () => {
-      if (activeElementIndex !== null && elements[activeElementIndex].type === 'text') {
-        const val = parseFloat(propLeading.value) || 1.2;
-        elements[activeElementIndex].leading = val;
-        propLeadingVal.textContent = `${val}`;
-        isUnsaved = true;
-        updateSaveButtonState();
-        renderCanvas();
-      }
-    });
-
-    propSvgPresets.addEventListener('change', () => {
-      if (activeElementIndex !== null && elements[activeElementIndex].type === 'shape') {
-        const pVal = propSvgPresets.value;
-        if (pVal && pathPresets[pVal]) {
-          elements[activeElementIndex].customSvgPath = pathPresets[pVal];
-          propCustomSvgPath.value = pathPresets[pVal];
-          isUnsaved = true;
-          updateSaveButtonState();
-          renderCanvas();
-        }
-      }
-    });
-
-    propCustomSvgPath.addEventListener('input', () => {
-      if (activeElementIndex !== null && elements[activeElementIndex].type === 'shape') {
-        elements[activeElementIndex].customSvgPath = propCustomSvgPath.value;
-        isUnsaved = true;
-        updateSaveButtonState();
-        renderCanvas();
-      }
-    });
-
-    // Alignment triggers
-    alignLeft.addEventListener('click', () => setAlign('left'));
-    alignCenter.addEventListener('click', () => setAlign('center'));
-    alignRight.addEventListener('click', () => setAlign('right'));
-    alignJustify.addEventListener('click', () => setAlign('justify'));
-
-    function setAlign(mode) {
-      if (activeElementIndex !== null && elements[activeElementIndex].type === 'text') {
-        elements[activeElementIndex].textAlign = mode;
-        isUnsaved = true;
-        updateSaveButtonState();
-        renderCanvas();
-        updatePropertiesPanel();
-      }
-    }
-
-    // Global Background triggers (Solid vs Gradient background)
-    bgFillType.addEventListener('change', () => {
-      const type = bgFillType.value;
-      if (type === 'gradient') {
-        bgSolidGroup.style.display = 'none';
-        bgGradientGroup.style.display = 'block';
-      } else {
-        bgSolidGroup.style.display = 'block';
-        bgGradientGroup.style.display = 'none';
-      }
-      backgroundColor = compileBackgroundStyleString();
-      if (backgroundColor.includes('gradient')) {
-        canvas.style.background = backgroundColor;
-      } else {
-        canvas.style.background = '';
-        canvas.style.backgroundColor = backgroundColor;
-      }
-      isUnsaved = true;
-      updateSaveButtonState();
-    });
-
-    function triggerGlobalBgUpdate() {
-      backgroundColor = compileBackgroundStyleString();
-      if (backgroundColor.includes('gradient')) {
-        canvas.style.background = backgroundColor;
-      } else {
-        canvas.style.background = '';
-        canvas.style.backgroundColor = backgroundColor;
-      }
-      isUnsaved = true;
-      updateSaveButtonState();
-    }
-    bgColor.addEventListener('input', triggerGlobalBgUpdate);
-    bgColorText.addEventListener('input', (e) => {
-      let val = e.target.value;
-      if (val.startsWith('#') && (val.length === 4 || val.length === 7)) {
-        bgColor.value = val;
-        triggerGlobalBgUpdate();
-      }
-    });
-    bgGradAngle.addEventListener('input', triggerGlobalBgUpdate);
-    bgGradStart.addEventListener('input', triggerGlobalBgUpdate);
-    bgGradEnd.addEventListener('input', triggerGlobalBgUpdate);
-
-    // Handle Page selector change
-    pageSelect.addEventListener('change', () => {
-      activePage = pageSelect.value;
-      loadPageState(activePage);
-    });
-
-    // Create New Page / Subpage
-    addPageBtn.addEventListener('click', async () => {
-      const input = prompt('Enter clean relative path for the new page / subpage:\n(e.g., "about" or "about/colophon" or "issue-01/editorial")', '');
-      if (input === null) return;
-
-      // Path Sanitization
-      let pathStr = input.trim();
-      // Remove starting slashes & leading spaces
-      pathStr = pathStr.replace(/^[\\/]+/, '').replace(/[\\/]+$/, '');
-      // Ensure it doesn't navigate up
-      pathStr = pathStr.split('/').filter(p => p && p !== '..').join('/');
-
-      if (!pathStr) {
-        alert('Please provide a non-empty relative path!');
-        return;
-      }
-
-      const formattedPath = '/' + pathStr;
-
-      // Instantiate a fresh workspace array state & save instantly
-      try {
-        const res = await fetch('/api/save-page', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            pagePath: formattedPath,
-            elements: [
-              {
-                type: 'text',
-                x: 10,
-                y: 15,
-                w: 80,
-                fontSize: 8,
-                fontFamily: 'Syne',
-                fontWeight: '900',
-                color: '#ffffff',
-                textAlign: 'center',
-                text: 'NEW CANVAS'
-              }
-            ],
-            googleFonts: ['Syne'],
-            backgroundColor: '#111111'
-          })
-        });
-
-        const result = await res.json();
-        if (result.success) {
-          // Reload pages lists, select and load the new page instantly
-          await loadPagesList(formattedPath);
-          await loadPageState(formattedPath);
-        }
-      } catch (err) {
-        console.error('Failed to create new page directories', err);
-        alert('Failed to initiate directories for: ' + formattedPath);
-      }
-    });
-
-    // Add Content block generators
-    addTextBtn.addEventListener('click', () => {
-      const newText = {
-        type: 'text',
-        x: 15,
-        y: Math.max(10, elements.length * 12),
-        w: 70,
-        fontSize: 4,
-        fontFamily: 'Inter',
-        fontWeight: '400',
-        color: '#ffffff',
-        textAlign: 'left',
-        blendMode: 'normal',
-        rotate: 0,
-        rotateX: 0,
-        rotateY: 0,
-        skewX: 0,
-        skewY: 0,
-        fillType: 'solid',
-        text: 'Editable typography block'
-      };
-      elements.push(newText);
-      activeElementIndex = elements.length - 1;
-      isUnsaved = true;
-      updateSaveButtonState();
-      renderCanvas();
-      selectElement(activeElementIndex);
-    });
-
-    // Add Shapes generator
-    addShapeBtn.addEventListener('click', () => {
-      const newShape = {
-        type: 'shape',
-        shapeType: 'circle',
-        x: 25,
-        y: Math.max(15, elements.length * 15),
-        w: 40,
-        h: 40,
-        fillType: 'solid',
-        fillColor: '#3b82f6',
-        strokeColor: '#ffffff',
-        strokeWidth: 2,
-        borderRadius: 0,
-        rotate: 0,
-        rotateX: 0,
-        rotateY: 0,
-        skewX: 0,
-        skewY: 0,
-        blendMode: 'normal'
-      };
-      elements.push(newShape);
-      activeElementIndex = elements.length - 1;
-      isUnsaved = true;
-      updateSaveButtonState();
-      renderCanvas();
-      selectElement(activeElementIndex);
-    });
-
-    // Multer upload triggers
-    addImageBtn.addEventListener('click', () => {
-      fileUploader.click();
-    });
-
-    fileUploader.addEventListener('change', async (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
-
-      const formData = new FormData();
-      formData.append('file', file);
-
-      try {
-        const res = await fetch(`/api/upload?page=${encodeURIComponent(activePage)}`, {
-          method: 'POST',
-          body: formData
-        });
-        const data = await res.json();
-        
-        if (data.filename) {
-          addNewImageElement(data.filename);
-        }
-      } catch (err) {
-        console.error('File upload failed', err);
-        alert('File upload failed!');
-      }
-      // reset file input
-      fileUploader.value = '';
-    });
-
-    // Support external image paths too
-    externalImageInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        const url = externalImageInput.value.trim();
-        if (url) {
-          addNewImageElement(url);
-          externalImageInput.value = '';
-        }
-      }
-    });
-
-    // Add image helper
-    function addNewImageElement(srcPath) {
-      const newImg = {
-        type: 'image',
-        src: srcPath,
-        x: 10,
-        y: Math.max(15, elements.length * 15),
-        w: 80,
-        blendMode: 'normal',
-        rotate: 0,
-        rotateX: 0,
-        rotateY: 0,
-        skewX: 0,
-        skewY: 0,
-        aspectRatio: '16/9' // default placeholder
-      };
-
-      // Measure image natural dimensions to automatically lock aspect ratio
-      const imgObj = new Image();
-      imgObj.onload = function() {
-        const ratio = (imgObj.naturalWidth / imgObj.naturalHeight).toFixed(3);
-        newImg.aspectRatio = `${imgObj.naturalWidth}/${imgObj.naturalHeight}`;
-        
-        elements.push(newImg);
-        activeElementIndex = elements.length - 1;
-        isUnsaved = true;
-        updateSaveButtonState();
-        renderCanvas();
-        selectElement(activeElementIndex);
-      };
-      imgObj.onerror = function() {
-        // Fallback in case loading fails
-        elements.push(newImg);
-        activeElementIndex = elements.length - 1;
-        isUnsaved = true;
-        updateSaveButtonState();
-        renderCanvas();
-        selectElement(activeElementIndex);
-      };
-      imgObj.src = srcPath;
-    }
-
-    // Delete elements
-    deleteElementBtn.addEventListener('click', deleteActiveElement);
-
-    function deleteActiveElement() {
-      if (selectedIndices.length > 0) {
-        const sortedIndices = [...selectedIndices].sort((a, b) => b - a);
-        sortedIndices.forEach(idx => {
-          elements.splice(idx, 1);
-        });
-        selectedIndices = [];
-        activeElementIndex = null;
-        isUnsaved = true;
-        updateSaveButtonState();
-        renderCanvas();
-        updatePropertiesPanel();
-        hideFloatingUI();
-      } else if (activeElementIndex !== null) {
-        elements.splice(activeElementIndex, 1);
-        activeElementIndex = null;
-        isUnsaved = true;
-        updateSaveButtonState();
-        renderCanvas();
-        updatePropertiesPanel();
-        hideFloatingUI();
-      }
-    }
-
-    // Save changes button action
-    saveBtn.addEventListener('click', () => {
-      savePageState(true);
-    });
-
-    // FLOATING QUICKBAR POSITIONING
-    function repositionQuickbar() {
-      if (activeElementIndex === null || !elements[activeElementIndex]) {
-        quickbar.style.display = 'none';
-        return;
-      }
-      // Query active element div on DOM
-      const activeDiv = canvas.querySelector(`.editor-element[data-index="${activeElementIndex}"]`);
-      if (!activeDiv) return;
-
-      const rect = activeDiv.getBoundingClientRect();
-      const workspaceRect = document.getElementById('workspace').getBoundingClientRect();
-      const scrollContainer = document.getElementById('workspace');
-
-      // Place it right above the active element
-      const quickbarTop = rect.top + scrollContainer.scrollTop - workspaceRect.top - 40;
-      const quickbarLeft = rect.left + scrollContainer.scrollLeft - workspaceRect.left + (rect.width / 2) - 110;
-
-      quickbar.style.top = `${Math.max(10, quickbarTop)}px`;
-      quickbar.style.left = `${Math.max(10, quickbarLeft)}px`;
-      quickbar.style.display = 'flex';
-    }
-
-    // CONTEXT MENU TRIGGERS
-    function showContextMenu(clientX, clientY) {
-      const workspaceRect = document.getElementById('workspace').getBoundingClientRect();
-      const scrollContainer = document.getElementById('workspace');
-
-      contextMenu.style.top = `${clientY + scrollContainer.scrollTop - workspaceRect.top}px`;
-      contextMenu.style.left = `${clientX + scrollContainer.scrollLeft - workspaceRect.left}px`;
-      contextMenu.style.display = 'block';
-    }
-
-    function hideFloatingUI() {
-      contextMenu.style.display = 'none';
-    }
-
-    // FLOATING INSPECTOR DRAG LOGIC
-    function setupInspectorDrag() {
-      let isDragging = false;
-      let startX, startY;
-      let currentLeft, currentTop;
-
-      inspectorHeader.addEventListener('mousedown', (e) => {
-        isDragging = true;
-        startX = e.clientX;
-        startY = e.clientY;
-        const style = window.getComputedStyle(inspector);
-        currentLeft = parseInt(style.left) || 0;
-        currentTop = parseInt(style.top) || 0;
-        e.preventDefault();
-      });
-
-      window.addEventListener('mousemove', (e) => {
-        if (!isDragging) return;
-        const dx = e.clientX - startX;
-        const dy = e.clientY - startY;
-        inspector.style.left = `${currentLeft + dx}px`;
-        inspector.style.top = `${currentTop + dy}px`;
-      });
-
-      window.addEventListener('mouseup', () => {
-        isDragging = false;
-      });
-    }
-
-    // Launch direct floating element inspector tuner
-    function showFloatingInspector(idx, clientX, clientY) {
-      hideFloatingUI();
-      selectElement(idx);
-      
-      const workspaceRect = document.getElementById('workspace').getBoundingClientRect();
-      const scrollContainer = document.getElementById('workspace');
-
-      // Align it nicely on screen next to the double clicked item
-      const left = clientX + scrollContainer.scrollLeft - workspaceRect.left + 20;
-      const top = clientY + scrollContainer.scrollTop - workspaceRect.top - 100;
-
-      inspector.style.left = `${Math.max(10, left)}px`;
-      inspector.style.top = `${Math.max(10, top)}px`;
-      inspector.style.display = 'flex';
-      
-      syncFloatingInspectorFields();
-    }
-
-    // FLOATING INSPECTOR TAB SWITCHER
-    const tabs = inspector.querySelectorAll('.inspector-tab');
-    const panes = inspector.querySelectorAll('.tab-pane');
-    tabs.forEach(tab => {
-      tab.addEventListener('click', () => {
-        tabs.forEach(t => t.classList.remove('active'));
-        panes.forEach(p => p.classList.remove('active'));
-        tab.classList.add('active');
-        const target = tab.dataset.tab;
-        document.getElementById(target).classList.add('active');
-      });
-    });
-
-    document.getElementById('floating-inspector-close').addEventListener('click', () => {
-      inspector.style.display = 'none';
-    });
-
-    // FLOATING QUICKBAR & CONTEXT MENU ACTIONS
-    document.getElementById('qb-rotate-left').addEventListener('click', () => adjustRotation(-15));
-    document.getElementById('qb-rotate-right').addEventListener('click', () => adjustRotation(15));
-    document.getElementById('qb-scale-up').addEventListener('click', () => adjustWidth(5));
-    document.getElementById('qb-scale-down').addEventListener('click', () => adjustWidth(-5));
-    document.getElementById('qb-bring-forward').addEventListener('click', bringActiveToFront);
-    document.getElementById('qb-delete').addEventListener('click', deleteActiveElement);
-    document.getElementById('qb-tune').addEventListener('click', (e) => {
-      if (activeElementIndex !== null) {
-        showFloatingInspector(activeElementIndex, e.clientX, e.clientY);
-      }
-    });
-
-    // Context menu items listeners
-    document.getElementById('menu-rotate-ccw').addEventListener('click', () => { adjustRotation(-15); hideFloatingUI(); });
-    document.getElementById('menu-rotate-cw').addEventListener('click', () => { adjustRotation(15); hideFloatingUI(); });
-    document.getElementById('menu-stretch-wider').addEventListener('click', () => { adjustWidth(10); hideFloatingUI(); });
-    document.getElementById('menu-stretch-narrower').addEventListener('click', () => { adjustWidth(-10); hideFloatingUI(); });
-    document.getElementById('menu-delete').addEventListener('click', () => { deleteActiveElement(); hideFloatingUI(); });
-    document.getElementById('menu-edit-floating').addEventListener('click', (e) => {
-      if (activeElementIndex !== null) {
-        showFloatingInspector(activeElementIndex, e.clientX, e.clientY);
-      }
-    });
-
-    // Layer stack sequences swaps
-    document.getElementById('menu-bring-forward').addEventListener('click', () => {
-      if (activeElementIndex !== null && activeElementIndex < elements.length - 1) {
-        const temp = elements[activeElementIndex];
-        elements[activeElementIndex] = elements[activeElementIndex + 1];
-        elements[activeElementIndex + 1] = temp;
-        selectElement(activeElementIndex + 1);
-        isUnsaved = true;
-        updateSaveButtonState();
-        renderCanvas();
-      }
-      hideFloatingUI();
-    });
-
-    document.getElementById('menu-send-backward').addEventListener('click', () => {
-      if (activeElementIndex !== null && activeElementIndex > 0) {
-        const temp = elements[activeElementIndex];
-        elements[activeElementIndex] = elements[activeElementIndex - 1];
-        elements[activeElementIndex - 1] = temp;
-        selectElement(activeElementIndex - 1);
-        isUnsaved = true;
-        updateSaveButtonState();
-        renderCanvas();
-      }
-      hideFloatingUI();
-    });
-
-    function bringActiveToFront() {
-      if (activeElementIndex !== null && activeElementIndex < elements.length - 1) {
-        const activeItem = elements.splice(activeElementIndex, 1)[0];
-        elements.push(activeItem);
-        selectElement(elements.length - 1);
-        isUnsaved = true;
-        updateSaveButtonState();
-        renderCanvas();
-      }
-    }
-
-    function adjustRotation(deg) {
-      if (activeElementIndex !== null) {
-        const current = elements[activeElementIndex].rotate || 0;
-        let nextRot = (current + deg) % 360;
-        if (nextRot < 0) nextRot += 360;
-        elements[activeElementIndex].rotate = nextRot;
-        isUnsaved = true;
-        updateSaveButtonState();
-        renderCanvas();
-        updatePropertiesPanel();
-      }
-    }
-
-    function adjustWidth(pct) {
-      if (activeElementIndex !== null) {
-        const current = elements[activeElementIndex].w || 50;
-        elements[activeElementIndex].w = Math.max(5, Math.min(100, current + pct));
-        isUnsaved = true;
-        updateSaveButtonState();
-        renderCanvas();
-        updatePropertiesPanel();
-      }
-    }
-
-    // FLOATING INSPECTOR LIVE SYNCS BINDINGS
-    [floatX, floatY, floatW, floatH, floatText, floatFillType, floatColorPicker, floatColorText, 
-     floatGradAngle, floatGradStart, floatGradEnd, floatBlend, floatRotate, floatRotateX, 
-     floatRotateY, floatSkewX, floatSkewY].forEach(input => {
-      input.addEventListener('input', applyFloatChanges);
-      input.addEventListener('change', applyFloatChanges);
-    });
-
-    // RESIZING HANDLES LOGIC WITH RATIO SCALING PRESERVATION
-    function createResizeHandles(parentDiv, el, idx) {
-      const positions = ['tl', 'tr', 'bl', 'br'];
-      
-      positions.forEach(pos => {
-        const handle = document.createElement('div');
-        handle.className = `resize-handle handle-${pos}`;
-        
-        handle.style.position = 'absolute';
-        handle.style.width = '10px';
-        handle.style.height = '10px';
-        handle.style.backgroundColor = '#3b82f6';
-        handle.style.border = '1.5px solid #ffffff';
-        handle.style.borderRadius = '50%';
-        handle.style.zIndex = '110';
-        
-        if (pos.includes('t')) handle.style.top = '-5px';
-        if (pos.includes('b')) handle.style.bottom = '-5px';
-        if (pos.includes('l')) handle.style.left = '-5px';
-        if (pos.includes('r')) handle.style.right = '-5px';
-        
-        if (pos === 'tl' || pos === 'br') handle.style.cursor = 'nwse-resize';
-        if (pos === 'tr' || pos === 'bl') handle.style.cursor = 'nesw-resize';
-        
-        // Prevent handle dragging from triggering full item movement
-        handle.addEventListener('mousedown', (e) => {
-          e.stopPropagation();
-          e.preventDefault();
-          startResizing(e, pos, el, idx, parentDiv);
-        });
-        
-        parentDiv.appendChild(handle);
-      });
-    }
-
-    function startResizing(mouseDownEvent, pos, el, idx, parentDiv) {
-      const startX = mouseDownEvent.clientX;
-      const startY = mouseDownEvent.clientY;
-      const startW = el.w || 50;
-      const startH = el.h || el.w || 30;
-      const startXPos = el.x || 0;
-      const startYPos = el.y || 0;
-      const startFontSize = el.fontSize || 4;
-      
-      const aspect = startW / startH;
-
-      function onMouseMove(e) {
-        const dx = e.clientX - startX;
-        const dy = e.clientY - startY;
-        
-        // Convert to canvas percentage coordinate metrics (375px wide)
-        const pxToUnits = canvasWidth / 100;
-        let dxUnits = dx / pxToUnits;
-        let dyUnits = dy / pxToUnits;
-        
-        let newW = startW;
-        let newH = startH;
-        let newX = startXPos;
-        let newY = startYPos;
-        
-        if (pos === 'br') {
-          newW = startW + dxUnits;
-          newH = startH + dyUnits;
-        } else if (pos === 'bl') {
-          newW = startW - dxUnits;
-          newH = startH + dyUnits;
-          newX = startXPos + dxUnits;
-        } else if (pos === 'tr') {
-          newW = startW + dxUnits;
-          newH = startH - dyUnits;
-          newY = startYPos + dyUnits;
-        } else if (pos === 'tl') {
-          newW = startW - dxUnits;
-          newH = startH - dyUnits;
-          newX = startXPos + dxUnits;
-          newY = startYPos + dyUnits;
-        }
-        
-        newW = Math.max(5, newW);
-        newH = Math.max(5, newH);
-        
-        const shouldLockRatio = e.shiftKey || el.type === 'image';
-        
-        if (shouldLockRatio) {
-          if (pos === 'br' || pos === 'tr') {
-            newH = newW / aspect;
-          } else {
-            newH = newW / aspect;
-          }
-        }
-        
-        el.w = Math.round(newW * 10) / 10;
-        el.x = Math.max(0, Math.round(newX * 10) / 10);
-        
-        if (el.type === 'shape') {
-          el.h = Math.round(newH * 10) / 10;
-        }
-        
-        if (pos.includes('t')) {
-          el.y = Math.max(0, Math.round(newY * 10) / 10);
-        } else if (pos.includes('b')) {
-          el.y = Math.max(0, Math.round(startYPos * 10) / 10);
-        }
-        
-        // Scaling text font-size proportionally with width if Shift held
-        if (el.type === 'text' && e.shiftKey) {
-          const scaleRatio = newW / startW;
-          el.fontSize = Math.round(startFontSize * scaleRatio * 10) / 10;
-          el.fontSize = Math.max(1, Math.min(25, el.fontSize));
-        }
-        
-        isUnsaved = true;
-        updateSaveButtonState();
-        renderCanvas();
-        updatePropertiesPanel();
-      }
-
-      function onMouseUp() {
-        window.removeEventListener('mousemove', onMouseMove);
-        window.removeEventListener('mouseup', onMouseUp);
-      }
-
-      window.addEventListener('mousemove', onMouseMove);
-      window.addEventListener('mouseup', onMouseUp);
-    }
-
-    // KEYBOARD SHORTCUTS FOR DELETION
-    document.addEventListener('keydown', (e) => {
-      if (document.activeElement && (
-          document.activeElement.tagName === 'INPUT' || 
-          document.activeElement.tagName === 'TEXTAREA' || 
-          document.activeElement.tagName === 'SELECT' || 
-          document.activeElement.contentEditable === 'true')) {
-        return;
-      }
-      
-      if (e.key === 'Delete' || e.key === 'Backspace') {
-        e.preventDefault();
-        deleteActiveElement();
-      }
-    });
-
-    // CANVAS MARQUEE SELECTION LOGIC
-    canvas.addEventListener('mousedown', (e) => {
-      if (e.button !== 0) return;
-      
-      // If clicking directly on an element or resize handles, setupDragEvents handles it
-      if (e.target.closest('.editor-element') || e.target.closest('.resize-handle')) {
-        return;
-      }
-      
-      e.preventDefault();
-      
-      // Clear selection if Shift is not held
-      if (!e.shiftKey) {
-        selectedIndices = [];
-        activeElementIndex = null;
-        renderCanvas();
-        updatePropertiesPanel();
-      }
-      
-      const canvasRect = canvas.getBoundingClientRect();
-      const startX = e.clientX - canvasRect.left;
-      const startY = e.clientY - canvasRect.top;
-      
-      let marqueeBox = document.getElementById('marquee-select');
-      if (!marqueeBox) {
-        marqueeBox = document.createElement('div');
-        marqueeBox.id = 'marquee-select';
-        marqueeBox.style.cssText = 'position: absolute; border: 1.5px dashed #10b981; background-color: rgba(16, 185, 129, 0.12); pointer-events: none; z-index: 9999; display: none;';
-        canvas.appendChild(marqueeBox);
-      }
-      
-      marqueeBox.style.left = `${startX}px`;
-      marqueeBox.style.top = `${startY}px`;
-      marqueeBox.style.width = '0px';
-      marqueeBox.style.height = '0px';
-      marqueeBox.style.display = 'block';
-      
-      const initialSelectedIndices = [...selectedIndices];
-      
-      function onMouseMove(moveEvt) {
-        const currentX = Math.max(0, Math.min(canvasRect.width, moveEvt.clientX - canvasRect.left));
-        const currentY = Math.max(0, Math.min(canvasRect.height, moveEvt.clientY - canvasRect.top));
-        
-        const left = Math.min(startX, currentX);
-        const top = Math.min(startY, currentY);
-        const width = Math.abs(startX - currentX);
-        const height = Math.abs(startY - currentY);
-        
-        marqueeBox.style.left = `${left}px`;
-        marqueeBox.style.top = `${top}px`;
-        marqueeBox.style.width = `${width}px`;
-        marqueeBox.style.height = `${height}px`;
-        
-        const newSelected = [...initialSelectedIndices];
-        
-        elements.forEach((el, idx) => {
-          const div = canvas.querySelector(`.editor-element[data-index="${idx}"]`);
-          if (div) {
-            const divLeft = parseFloat(div.style.left) || 0;
-            const divTop = parseFloat(div.style.top) || 0;
-            const divWidth = parseFloat(div.style.width) || 0;
-            const divHeight = div.offsetHeight || 30;
-            
-            const divRight = divLeft + divWidth;
-            const divBottom = divTop + divHeight;
-            
-            const boxRight = left + width;
-            const boxBottom = top + height;
-            
-            const overlaps = !(divLeft > boxRight || divRight < left || divTop > boxBottom || divBottom < top);
-            
-            if (overlaps) {
-              if (!newSelected.includes(idx)) {
-                newSelected.push(idx);
-              }
-            } else {
-              if (!initialSelectedIndices.includes(idx)) {
-                const sIdx = newSelected.indexOf(idx);
-                if (sIdx > -1) {
-                  newSelected.splice(sIdx, 1);
-                }
-              }
-            }
-          }
-        });
-        
-        selectedIndices = newSelected;
-        
-        // Instant visual feedback for selected items
-        const renderedDivs = canvas.querySelectorAll('.editor-element');
-        renderedDivs.forEach((div) => {
-          const idx = parseInt(div.dataset.index);
-          if (selectedIndices.includes(idx)) {
-            div.classList.add('selected-element');
-          } else {
-            div.classList.remove('selected-element');
-          }
-        });
-      }
-      
-      function onMouseUp() {
-        window.removeEventListener('mousemove', onMouseMove);
-        window.removeEventListener('mouseup', onMouseUp);
-        
-        if (marqueeBox) {
-          marqueeBox.style.display = 'none';
-        }
-        
-        if (selectedIndices.length > 0) {
-          activeElementIndex = selectedIndices[selectedIndices.length - 1];
-        } else {
-          activeElementIndex = null;
-        }
-        
-        renderCanvas();
-        updatePropertiesPanel();
-      }
-      
-      window.addEventListener('mousemove', onMouseMove);
-      window.addEventListener('mouseup', onMouseUp);
-    });
-
-    // Initialize Page
-    async function init() {
-      setupInspectorDrag();
-      const savedPage = localStorage.getItem('zine-active-page') || '/';
-      await loadPagesList(savedPage);
-      await loadPageState(activePage || savedPage);
-    }
-
-    // Click outside elements deselects them
-    document.addEventListener('mousedown', (e) => {
-      // Hide context menu on outer clicks
-      if (!contextMenu.contains(e.target)) {
-        hideFloatingUI();
-      }
-
-      // Deselect element if clicking outer canvas area
-      if (!canvas.contains(e.target) && 
-          !propertiesPanel.contains(e.target) && 
-          !document.getElementById('toolbar').contains(e.target) &&
-          !quickbar.contains(e.target) &&
-          !inspector.contains(e.target) &&
-          !contextMenu.contains(e.target)) {
-        activeElementIndex = null;
-        selectedIndices = [];
-        const renderedElements = canvas.querySelectorAll('.editor-element');
-        renderedElements.forEach(el => {
-          el.classList.remove('active');
-          el.classList.remove('selected-element');
-        });
-        updatePropertiesPanel();
-        hideFloatingUI();
-      }
-    });
-
-    init();
-  </script>
+  <!-- Editor Modular Application Bundle -->
+  <script type="module" src="/src/editor/main.ts"></script>
 </body>
 </html>
